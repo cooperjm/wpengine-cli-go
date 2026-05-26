@@ -192,8 +192,87 @@ func (m *Model) View() string {
 	sb.WriteString(titleStyle.Render(" WP Engine Site Update Dashboard "))
 	sb.WriteString("\n\n")
 
-	// Job List
+	// Calculate counts
+	var pendingCount, activeCount, completedCount, failedCount int
+	for _, job := range m.Jobs {
+		m.mu.Lock()
+		status := job.Status
+		m.mu.Unlock()
+		switch status {
+		case "idle":
+			pendingCount++
+		case "completed":
+			completedCount++
+		case "failed":
+			failedCount++
+		default:
+			activeCount++
+		}
+	}
+
+	// Render summary line
+	pendingBadge := lipgloss.NewStyle().Foreground(mutedColor).Bold(true).Render(fmt.Sprintf("● Pending: %d", pendingCount))
+	activeBadge := lipgloss.NewStyle().Foreground(infoColor).Bold(true).Render(fmt.Sprintf("▶ Active: %d", activeCount))
+	completedBadge := lipgloss.NewStyle().Foreground(successColor).Bold(true).Render(fmt.Sprintf("✔ Completed: %d", completedCount))
+	failedBadge := lipgloss.NewStyle().Foreground(errorColor).Bold(true).Render(fmt.Sprintf("✖ Failed: %d", failedCount))
+
+	sb.WriteString(fmt.Sprintf("%s  |  %s  |  %s  |  %s\n\n", pendingBadge, activeBadge, completedBadge, failedBadge))
+
+	// Render progress bar
+	totalJobs := len(m.Jobs)
+	finishedJobs := completedCount + failedCount
+	percent := 0.0
+	if totalJobs > 0 {
+		percent = float64(finishedJobs) / float64(totalJobs)
+	}
+
+	barWidth := 30
+	filledWidth := int(percent * float64(barWidth))
+	if filledWidth > barWidth {
+		filledWidth = barWidth
+	}
+
+	filledBar := lipgloss.NewStyle().Foreground(successColor).Render(strings.Repeat("█", filledWidth))
+	emptyBar := lipgloss.NewStyle().Foreground(mutedColor).Render(strings.Repeat("░", barWidth-filledWidth))
+	sb.WriteString(fmt.Sprintf("Progress: [%s%s] %d%% (%d/%d)\n\n", filledBar, emptyBar, int(percent*100), finishedJobs, totalJobs))
+
+	// Find focus index (first running or pending job)
+	focusIdx := -1
 	for i, job := range m.Jobs {
+		m.mu.Lock()
+		status := job.Status
+		m.mu.Unlock()
+		if status != "completed" && status != "failed" {
+			focusIdx = i
+			break
+		}
+	}
+	if focusIdx == -1 {
+		focusIdx = len(m.Jobs) - 1
+	}
+
+	maxVisible := 8
+	start := 0
+	end := len(m.Jobs)
+
+	if len(m.Jobs) > maxVisible {
+		start = focusIdx - maxVisible/2
+		if start < 0 {
+			start = 0
+		}
+		end = start + maxVisible
+		if end > len(m.Jobs) {
+			end = len(m.Jobs)
+			start = end - maxVisible
+		}
+	}
+
+	if start > 0 {
+		sb.WriteString(lipgloss.NewStyle().Foreground(mutedColor).Render(fmt.Sprintf("  ▲ ... %d jobs completed above ...", start)) + "\n\n")
+	}
+
+	for i := start; i < end; i++ {
+		job := m.Jobs[i]
 		m.mu.Lock()
 		status := job.Status
 		details := job.Details
@@ -210,7 +289,6 @@ func (m *Model) View() string {
 			statusText = lipgloss.NewStyle().Foreground(mutedColor).Render(details)
 		}
 
-		// Add spinner if job is active
 		spinStr := "  "
 		if status != "idle" && status != "completed" && status != "failed" {
 			spinStr = m.spinner.View() + " "
@@ -220,9 +298,13 @@ func (m *Model) View() string {
 		if statusText != "" {
 			sb.WriteString(fmt.Sprintf("     └─ %s\n", statusText))
 		}
-		if i < len(m.Jobs)-1 {
+		if i < end-1 {
 			sb.WriteString("\n")
 		}
+	}
+
+	if end < len(m.Jobs) {
+		sb.WriteString("\n" + lipgloss.NewStyle().Foreground(mutedColor).Render(fmt.Sprintf("  ▼ ... %d jobs pending below ...", len(m.Jobs)-end)) + "\n")
 	}
 
 	if m.done {

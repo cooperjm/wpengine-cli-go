@@ -107,80 +107,87 @@ completes, and then securely connects via SSH to run WordPress updates using WP-
 		}
 
 		// Resolve names to install objects
-		var resolvedJobs []*ui.Job
-		for _, target := range targets {
-			// First try resolving from cache
-			cachedInst, _ := config.ResolveFromCache(target)
-			if cachedInst != nil {
+		return runUpdatesForEnvironments(targets, scope, updateConcurrent, updateEmail, updateDryRun)
+	},
+}
+
+func runUpdatesForEnvironments(targets []string, scope string, concurrency int, email string, dryRun bool) error {
+	var installs []api.Install
+	var err error
+
+	// Resolve names to install objects
+	var resolvedJobs []*ui.Job
+	for _, target := range targets {
+		// First try resolving from cache
+		cachedInst, _ := config.ResolveFromCache(target)
+		if cachedInst != nil {
+			resolvedJobs = append(resolvedJobs, &ui.Job{
+				ID:     cachedInst.ID,
+				Name:   cachedInst.Name,
+				Status: "idle",
+			})
+			continue
+		}
+
+		// If not found in cache, fetch all installs from API (fallback)
+		if len(installs) == 0 {
+			installs, err = APIClient.GetAllInstalls()
+			if err != nil {
+				return fmt.Errorf("failed to fetch environments from API: %w", err)
+			}
+			_ = config.SaveCache(installs)
+		}
+
+		found := false
+		for _, inst := range installs {
+			if strings.EqualFold(inst.Name, target) || strings.EqualFold(inst.ID, target) {
 				resolvedJobs = append(resolvedJobs, &ui.Job{
-					ID:     cachedInst.ID,
-					Name:   cachedInst.Name,
+					ID:     inst.ID,
+					Name:   inst.Name,
 					Status: "idle",
 				})
-				continue
-			}
-
-			// If not found in cache, fetch all installs from API (fallback)
-			if len(installs) == 0 {
-				installs, err = APIClient.GetAllInstalls()
-				if err != nil {
-					return fmt.Errorf("failed to fetch environments from API: %w", err)
-				}
-				_ = config.SaveCache(installs)
-			}
-
-			found := false
-			for _, inst := range installs {
-				if strings.EqualFold(inst.Name, target) || strings.EqualFold(inst.ID, target) {
-					resolvedJobs = append(resolvedJobs, &ui.Job{
-						ID:     inst.ID,
-						Name:   inst.Name,
-						Status: "idle",
-					})
-					found = true
-					break
-				}
-			}
-
-			if !found {
-				// Add anyway, but status failed
-				resolvedJobs = append(resolvedJobs, &ui.Job{
-					Name:   target,
-					Status: "failed",
-					Error:  fmt.Errorf("environment not found or inactive in account"),
-				})
+				found = true
+				break
 			}
 		}
 
-		// Determine concurrency
-		concurrency := updateConcurrent
-		if concurrency <= 0 {
-			concurrency = Cfg.BatchConcurrency
+		if !found {
+			// Add anyway, but status failed
+			resolvedJobs = append(resolvedJobs, &ui.Job{
+				Name:   target,
+				Status: "failed",
+				Error:  fmt.Errorf("environment not found or inactive in account"),
+			})
 		}
-		if concurrency <= 0 {
-			concurrency = 10
-		}
+	}
 
-		// 4. Run Execution Loop
-		// Select interactive TUI or static log mode
-		interactive := Cfg.Interactive && !NoInter
-		if interactive {
-			m := ui.NewModel(resolvedJobs, APIClient, SSHClient, scope, updateDryRun, concurrency, updateEmail)
-			p := tea.NewProgram(m)
-			if _, err := p.Run(); err != nil {
-				return fmt.Errorf("TUI error: %w", err)
-			}
-		} else {
-			runNonInteractive(resolvedJobs, scope, concurrency)
-		}
+	// Determine concurrency
+	if concurrency <= 0 {
+		concurrency = Cfg.BatchConcurrency
+	}
+	if concurrency <= 0 {
+		concurrency = 10
+	}
 
-		// 5. Update Check Results Cache if not a dry-run
-		if !updateDryRun {
-			updateCachedCheckResults(resolvedJobs, scope)
+	// Run Execution Loop
+	// Select interactive TUI or static log mode
+	interactive := Cfg.Interactive && !NoInter
+	if interactive {
+		m := ui.NewModel(resolvedJobs, APIClient, SSHClient, scope, dryRun, concurrency, email)
+		p := tea.NewProgram(m)
+		if _, err := p.Run(); err != nil {
+			return fmt.Errorf("TUI error: %w", err)
 		}
+	} else {
+		runNonInteractive(resolvedJobs, scope, concurrency)
+	}
 
-		return nil
-	},
+	// Update Check Results Cache if not a dry-run
+	if !dryRun {
+		updateCachedCheckResults(resolvedJobs, scope)
+	}
+
+	return nil
 }
 
 // runNonInteractive executes the updates using clean Lipgloss-styled print statements (useful for scripting/CI).

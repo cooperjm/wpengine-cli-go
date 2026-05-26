@@ -14,14 +14,16 @@ import (
 	"wpengine-cli/internal/config"
 	"wpengine-cli/internal/ui"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 )
 
 type targetInfo struct {
-	name string
-	id   string
+	name    string
+	id      string
+	envType string
 }
 
 var (
@@ -52,8 +54,10 @@ type ThemeUpdateInfo struct {
 }
 
 // SiteCheckResult stores the check status for a specific site
+// SiteCheckResult stores the check status for a specific site
 type SiteCheckResult struct {
 	EnvName     string
+	EnvType     string
 	CoreNeed    []CoreUpdateInfo
 	PluginsNeed []PluginUpdateInfo
 	ThemesNeed  []ThemeUpdateInfo
@@ -62,6 +66,7 @@ type SiteCheckResult struct {
 
 type CachedSiteCheckResult struct {
 	EnvName     string             `json:"env_name"`
+	EnvType     string             `json:"env_type"`
 	CoreNeed    []CoreUpdateInfo   `json:"core_need"`
 	PluginsNeed []PluginUpdateInfo `json:"plugins_need"`
 	ThemesNeed  []ThemeUpdateInfo  `json:"themes_need"`
@@ -95,6 +100,7 @@ func saveCheckResults(results []SiteCheckResult) error {
 		}
 		cachedResults[i] = CachedSiteCheckResult{
 			EnvName:     r.EnvName,
+			EnvType:     r.EnvType,
 			CoreNeed:    r.CoreNeed,
 			PluginsNeed: r.PluginsNeed,
 			ThemesNeed:  r.ThemesNeed,
@@ -181,6 +187,7 @@ func updateCachedCheckResults(completedJobs []*ui.Job, scope string) {
 			}
 			results[i] = SiteCheckResult{
 				EnvName:     cr.EnvName,
+				EnvType:     cr.EnvType,
 				CoreNeed:    cr.CoreNeed,
 				PluginsNeed: cr.PluginsNeed,
 				ThemesNeed:  cr.ThemesNeed,
@@ -267,6 +274,7 @@ identify available updates for WordPress core, plugins, and themes.`,
 					}
 					results[i] = SiteCheckResult{
 						EnvName:     cr.EnvName,
+						EnvType:     cr.EnvType,
 						CoreNeed:    cr.CoreNeed,
 						PluginsNeed: cr.PluginsNeed,
 						ThemesNeed:  cr.ThemesNeed,
@@ -279,6 +287,58 @@ identify available updates for WordPress core, plugins, and themes.`,
 				fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render("Run 'wpengine check --all-envs' (or with specific targets) to scan for live updates.") + "\n")
 
 				renderSummaryTable(results)
+
+				// Determine if there are any environments with pending updates
+				var pendingUpdates []siteSelectionItem
+				for _, r := range results {
+					if r.Err != nil {
+						continue
+					}
+					if len(r.CoreNeed) > 0 || len(r.PluginsNeed) > 0 || len(r.ThemesNeed) > 0 {
+						var parts []string
+						if len(r.CoreNeed) > 0 {
+							parts = append(parts, "WordPress Core")
+						}
+						if len(r.PluginsNeed) > 0 {
+							parts = append(parts, fmt.Sprintf("%d plugin(s)", len(r.PluginsNeed)))
+						}
+						if len(r.ThemesNeed) > 0 {
+							parts = append(parts, fmt.Sprintf("%d theme(s)", len(r.ThemesNeed)))
+						}
+						pendingUpdates = append(pendingUpdates, siteSelectionItem{
+							envName:     r.EnvName,
+							envType:     r.EnvType,
+							updatesDesc: strings.Join(parts, ", "),
+							selected:    false,
+						})
+					}
+				}
+
+				if len(pendingUpdates) > 0 {
+					selModel := siteSelectionModel{items: pendingUpdates}
+					p := tea.NewProgram(selModel)
+					finalModel, err := p.Run()
+					if err == nil {
+						m := finalModel.(siteSelectionModel)
+						if m.chosen {
+							var toUpdate []string
+							for _, item := range m.items {
+								if item.selected {
+									toUpdate = append(toUpdate, item.envName)
+								}
+							}
+
+							if len(toUpdate) > 0 {
+								fmt.Printf("Starting updates for: %s\n", strings.Join(toUpdate, ", "))
+								err := runUpdatesForEnvironments(toUpdate, "all", Cfg.BatchConcurrency, "", false)
+								if err != nil {
+									return err
+								}
+							}
+						}
+					}
+				}
+
 				return nil
 			}
 
@@ -300,7 +360,7 @@ identify available updates for WordPress core, plugins, and themes.`,
 			// Try resolving from cache first
 			cachedInst, _ := config.ResolveFromCache(target)
 			if cachedInst != nil {
-				resolved = append(resolved, targetInfo{name: cachedInst.Name, id: cachedInst.ID})
+				resolved = append(resolved, targetInfo{name: cachedInst.Name, id: cachedInst.ID, envType: shortEnvType(cachedInst.Environment)})
 				continue
 			}
 
@@ -316,7 +376,7 @@ identify available updates for WordPress core, plugins, and themes.`,
 			found := false
 			for _, inst := range installs {
 				if strings.EqualFold(inst.Name, target) || strings.EqualFold(inst.ID, target) {
-					resolved = append(resolved, targetInfo{name: inst.Name, id: inst.ID})
+					resolved = append(resolved, targetInfo{name: inst.Name, id: inst.ID, envType: shortEnvType(inst.Environment)})
 					found = true
 					break
 				}
@@ -368,7 +428,7 @@ func runChecks(resolved []targetInfo, concurrency int) {
 			for j := range jobChan {
 				sem <- struct{}{}
 
-				res := checkEnvironmentUpdates(j.target.name)
+				res := checkEnvironmentUpdates(j.target.name, j.target.envType)
 				results[j.index] = res
 
 				if checkMinimal {
@@ -401,7 +461,7 @@ func renderSummaryTable(results []SiteCheckResult) {
 	t := table.New().
 		Border(lipgloss.RoundedBorder()).
 		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("99"))).
-		Headers("Environment", "WordPress", "Plugins", "Themes", "Status")
+		Headers("Environment", "Type", "WordPress", "Plugins", "Themes", "Status")
 
 	t.StyleFunc(func(row, col int) lipgloss.Style {
 		if row == table.HeaderRow {
@@ -418,6 +478,22 @@ func renderSummaryTable(results []SiteCheckResult) {
 		var wpStr, pluginStr, themeStr, statusStr string
 
 		envStr := lipgloss.NewStyle().Bold(true).Render(res.EnvName)
+
+		var typeBadge string
+		switch strings.ToLower(res.EnvType) {
+		case "prod":
+			typeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("160")).Bold(true).Render("PROD")
+		case "stg":
+			typeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render("STG")
+		case "dev":
+			typeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true).Render("DEV")
+		default:
+			if res.EnvType != "" {
+				typeBadge = strings.ToUpper(res.EnvType)
+			} else {
+				typeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Bold(true).Render("—")
+			}
+		}
 
 		if res.Err != nil {
 			wpStr = "—"
@@ -454,7 +530,7 @@ func renderSummaryTable(results []SiteCheckResult) {
 			}
 		}
 
-		t.Row(envStr, wpStr, pluginStr, themeStr, statusStr)
+		t.Row(envStr, typeBadge, wpStr, pluginStr, themeStr, statusStr)
 	}
 
 	fmt.Println(t.Render())
@@ -486,8 +562,8 @@ func renderSummaryTable(results []SiteCheckResult) {
 	)
 }
 
-func checkEnvironmentUpdates(envName string) SiteCheckResult {
-	res := SiteCheckResult{EnvName: envName}
+func checkEnvironmentUpdates(envName string, envType string) SiteCheckResult {
+	res := SiteCheckResult{EnvName: envName, EnvType: envType}
 
 	// Verify connection first
 	if err := SSHClient.VerifyConnection(envName); err != nil {
@@ -614,4 +690,160 @@ func init() {
 	checkCmd.Flags().BoolVarP(&checkMinimal, "minimal", "m", false, "Minimize output and display a summary table of environment updates")
 
 	RootCmd.AddCommand(checkCmd)
+}
+
+func shortEnvType(longType string) string {
+	switch strings.ToLower(longType) {
+	case "production":
+		return "prod"
+	case "staging":
+		return "stg"
+	case "development":
+		return "dev"
+	default:
+		return longType
+	}
+}
+
+type siteSelectionItem struct {
+	envName     string
+	envType     string
+	updatesDesc string
+	selected    bool
+}
+
+type siteSelectionModel struct {
+	items    []siteSelectionItem
+	cursor   int
+	chosen   bool
+	quitting bool
+}
+
+func (m siteSelectionModel) Init() tea.Cmd {
+	return nil
+}
+
+func (m siteSelectionModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "ctrl+c", "q", "esc":
+			m.quitting = true
+			return m, tea.Quit
+
+		case "up", "k":
+			if m.cursor > 0 {
+				m.cursor--
+			}
+
+		case "down", "j":
+			if m.cursor < len(m.items)-1 {
+				m.cursor++
+			}
+
+		case " ": // Toggle selection
+			m.items[m.cursor].selected = !m.items[m.cursor].selected
+
+		case "a": // Select all
+			for i := range m.items {
+				m.items[i].selected = true
+			}
+
+		case "n": // Select none
+			for i := range m.items {
+				m.items[i].selected = false
+			}
+
+		case "enter": // Confirm
+			m.chosen = true
+			return m, tea.Quit
+		}
+	}
+	return m, nil
+}
+
+func (m siteSelectionModel) View() string {
+	if m.quitting {
+		return "\nSelection cancelled.\n"
+	}
+	if m.chosen {
+		return ""
+	}
+
+	var sb strings.Builder
+	sb.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).Render("Select environments to update:") + "\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render("Use Up/Down or j/k to navigate, [Space] to toggle, [a] select all, [n] select none, [Enter] to run updates, [q] to cancel.") + "\n\n")
+
+	maxVisible := 10
+	start := 0
+	end := len(m.items)
+
+	if len(m.items) > maxVisible {
+		start = m.cursor - maxVisible/2
+		if start < 0 {
+			start = 0
+		}
+		end = start + maxVisible
+		if end > len(m.items) {
+			end = len(m.items)
+			start = end - maxVisible
+		}
+	}
+
+	if start > 0 {
+		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(fmt.Sprintf("  ▲ ... %d more environments above ...", start)) + "\n")
+	}
+
+	for i := start; i < end; i++ {
+		item := m.items[i]
+		cursorStr := "  "
+		var itemStyle lipgloss.Style
+		if m.cursor == i {
+			cursorStr = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Render("➔ ")
+			itemStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true)
+		} else {
+			itemStyle = lipgloss.NewStyle()
+		}
+
+		checkStr := "[ ]"
+		if item.selected {
+			checkStr = lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render("[✔]")
+		}
+
+		typeBadge := ""
+		switch strings.ToLower(item.envType) {
+		case "prod":
+			typeBadge = lipgloss.NewStyle().Background(lipgloss.Color("160")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" PROD ")
+		case "stg":
+			typeBadge = lipgloss.NewStyle().Background(lipgloss.Color("214")).Foreground(lipgloss.Color("232")).Bold(true).Padding(0, 1).Render(" STG  ")
+		case "dev":
+			typeBadge = lipgloss.NewStyle().Background(lipgloss.Color("39")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" DEV  ")
+		default:
+			if item.envType != "" {
+				typeBadge = lipgloss.NewStyle().Background(lipgloss.Color("244")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" " + strings.ToUpper(item.envType) + " ")
+			} else {
+				typeBadge = lipgloss.NewStyle().Background(lipgloss.Color("244")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" UNK  ")
+			}
+		}
+
+		nameStr := itemStyle.Render(item.envName)
+		descStr := lipgloss.NewStyle().Foreground(lipgloss.Color("246")).Render(item.updatesDesc)
+
+		sb.WriteString(fmt.Sprintf("%s%s  %s  %s  (%s)\n", cursorStr, checkStr, typeBadge, nameStr, descStr))
+	}
+
+	if end < len(m.items) {
+		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(fmt.Sprintf("  ▼ ... %d more environments below ...", len(m.items)-end)) + "\n")
+	}
+
+	// Show currently selected count
+	selectedCount := 0
+	for _, item := range m.items {
+		if item.selected {
+			selectedCount++
+		}
+	}
+	sb.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).Render(fmt.Sprintf("Selected: %d environments", selectedCount)) + "\n")
+
+	return sb.String()
 }

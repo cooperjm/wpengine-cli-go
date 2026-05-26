@@ -12,6 +12,7 @@ func TestRenderSummaryTable(t *testing.T) {
 	results := []SiteCheckResult{
 		{
 			EnvName: "prod-env",
+			EnvType: "prod",
 			CoreNeed: []CoreUpdateInfo{
 				{Version: "6.2", UpdateType: "minor"},
 			},
@@ -26,6 +27,7 @@ func TestRenderSummaryTable(t *testing.T) {
 		},
 		{
 			EnvName:     "clean-env",
+			EnvType:     "stg",
 			CoreNeed:    nil,
 			PluginsNeed: nil,
 			ThemesNeed:  nil,
@@ -33,6 +35,7 @@ func TestRenderSummaryTable(t *testing.T) {
 		},
 		{
 			EnvName:     "error-env",
+			EnvType:     "dev",
 			CoreNeed:    nil,
 			PluginsNeed: nil,
 			ThemesNeed:  nil,
@@ -58,6 +61,7 @@ func TestCheckCachingAndHook(t *testing.T) {
 	results := []SiteCheckResult{
 		{
 			EnvName: "test-site-1",
+			EnvType: "prod",
 			CoreNeed: []CoreUpdateInfo{
 				{Version: "6.2", UpdateType: "minor"},
 			},
@@ -71,6 +75,7 @@ func TestCheckCachingAndHook(t *testing.T) {
 		},
 		{
 			EnvName: "test-site-2",
+			EnvType: "dev",
 			Err:     errors.New("SSH error"),
 		},
 	}
@@ -89,11 +94,11 @@ func TestCheckCachingAndHook(t *testing.T) {
 	if cached == nil || len(cached.Results) != 2 {
 		t.Fatalf("expected 2 cached results, got %v", cached)
 	}
-	if cached.Results[0].EnvName != "test-site-1" || cached.Results[0].CoreNeed[0].Version != "6.2" {
+	if cached.Results[0].EnvName != "test-site-1" || cached.Results[0].CoreNeed[0].Version != "6.2" || cached.Results[0].EnvType != "prod" {
 		t.Errorf("cached result values mismatch: %+v", cached.Results[0])
 	}
-	if cached.Results[1].ErrorStr != "SSH error" {
-		t.Errorf("cached result error mismatch: %s", cached.Results[1].ErrorStr)
+	if cached.Results[1].ErrorStr != "SSH error" || cached.Results[1].EnvType != "dev" {
+		t.Errorf("cached result error/type mismatch: %+v", cached.Results[1])
 	}
 
 	// 3. Test updateCachedCheckResults
