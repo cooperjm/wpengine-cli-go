@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"wpengine-cli/internal/api"
@@ -10,6 +11,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
@@ -100,11 +102,22 @@ var siteListCmd = &cobra.Command{
 
 		fmt.Println("\n" + PrimaryStyle.Render("WP Engine Sites") + "\n")
 
+		// Detect terminal width
+		width, _, err := term.GetSize(int(os.Stdout.Fd()))
+		if err != nil || width <= 0 {
+			width = 120
+		}
+		if width > 140 {
+			width = 140
+		}
+
 		// Create a Lipgloss table
 		t := table.New().
 			Border(lipgloss.RoundedBorder()).
 			BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("99"))).
-			Headers("ID", "Name", "Environments", "Associated Account ID")
+			Headers("ID", "Name", "Environments", "Associated Account ID").
+			Width(width).
+			Wrap(true)
 
 		t.StyleFunc(func(row, col int) lipgloss.Style {
 			if row == table.HeaderRow {

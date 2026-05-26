@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
 	"wpengine-cli/internal/api"
 	"wpengine-cli/internal/config"
@@ -9,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 var (
@@ -78,11 +80,22 @@ var envListCmd = &cobra.Command{
 
 		fmt.Println("\n" + PrimaryStyle.Render("WP Engine Environments (Installs)") + "\n")
 
+		// Detect terminal width
+		width, _, err := term.GetSize(int(os.Stdout.Fd()))
+		if err != nil || width <= 0 {
+			width = 120
+		}
+		if width > 140 {
+			width = 140
+		}
+
 		// Create a Lipgloss table
 		t := table.New().
 			Border(lipgloss.RoundedBorder()).
 			BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("99"))).
-			Headers("ID", "Name", "Environment", "CNAME", "Primary Domain", "Status")
+			Headers("ID", "Name", "Environment", "CNAME", "Primary Domain", "Status").
+			Width(width).
+			Wrap(true)
 
 		// Styling table headers
 		t.StyleFunc(func(row, col int) lipgloss.Style {
