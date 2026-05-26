@@ -15,6 +15,10 @@ var (
 	envSiteID      string
 	envType        string
 	envName        string
+
+	envListProd bool
+	envListStg  bool
+	envListDev  bool
 )
 
 var envCmd = &cobra.Command{
@@ -39,6 +43,33 @@ var envListCmd = &cobra.Command{
 			return nil
 		}
 
+		filtering := envListProd || envListStg || envListDev
+
+		var filteredInstalls []api.Install
+		for _, inst := range installsResp.Results {
+			if filtering {
+				if envListProd && inst.Environment == "production" {
+					filteredInstalls = append(filteredInstalls, inst)
+					continue
+				}
+				if envListStg && inst.Environment == "staging" {
+					filteredInstalls = append(filteredInstalls, inst)
+					continue
+				}
+				if envListDev && inst.Environment == "development" {
+					filteredInstalls = append(filteredInstalls, inst)
+					continue
+				}
+				continue
+			}
+			filteredInstalls = append(filteredInstalls, inst)
+		}
+
+		if len(filteredInstalls) == 0 {
+			fmt.Println("\nNo environments matching the filters were found.")
+			return nil
+		}
+
 		fmt.Println("\n" + PrimaryStyle.Render("WP Engine Environments (Installs)") + "\n")
 
 		// Create a Lipgloss table
@@ -58,10 +89,10 @@ var envListCmd = &cobra.Command{
 			}
 
 			// Safety check: ensure row is within bounds of results
-			if row < 0 || row >= len(installsResp.Results) {
+			if row < 0 || row >= len(filteredInstalls) {
 				return lipgloss.NewStyle().Padding(0, 1)
 			}
-			inst := installsResp.Results[row]
+			inst := filteredInstalls[row]
 
 			// Colorize env column
 			if col == 2 {
@@ -84,12 +115,12 @@ var envListCmd = &cobra.Command{
 			return lipgloss.NewStyle().Padding(0, 1)
 		})
 
-		for _, inst := range installsResp.Results {
+		for _, inst := range filteredInstalls {
 			t.Row(inst.ID, inst.Name, inst.Environment, inst.CNAME, inst.PrimaryDomain, inst.Status)
 		}
 
 		fmt.Println(t.Render())
-		fmt.Printf("\nTotal environments found: %d\n\n", len(installsResp.Results))
+		fmt.Printf("\nTotal environments found: %d\n\n", len(filteredInstalls))
 		return nil
 	},
 }
@@ -171,6 +202,10 @@ func init() {
 	envCreateCmd.Flags().StringVar(&envAccountID, "account-id", "", "Account ID (falls back to default account in config)")
 	envCreateCmd.Flags().StringVar(&envSiteID, "site-id", "", "Site ID this environment belongs to (optional)")
 	envCreateCmd.Flags().StringVar(&envType, "type", "development", "Environment type: production, staging, development")
+
+	envListCmd.Flags().BoolVarP(&envListProd, "production", "p", false, "Filter to only production environments")
+	envListCmd.Flags().BoolVarP(&envListStg, "staging", "s", false, "Filter to only staging environments")
+	envListCmd.Flags().BoolVarP(&envListDev, "dev", "d", false, "Filter to only development environments")
 
 	envCmd.AddCommand(envListCmd)
 	envCmd.AddCommand(envCreateCmd)

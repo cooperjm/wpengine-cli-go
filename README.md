@@ -66,7 +66,27 @@ Copy the contents of the generated `.pub` file:
    ```
    *(On Windows, this creates `wpengine.exe`)*
 
-2. **Configure your Credentials**
+2. **Add to PATH (Optional)**
+   To run the `wpengine` command from any directory, add it to your system's `PATH`:
+
+   * **macOS / Linux**:
+     Create a symbolic link to the binary in a directory that is already in your `PATH` (like `/usr/local/bin`):
+     ```bash
+     sudo ln -sf "$(pwd)/wpengine" /usr/local/bin/wpengine
+     ```
+
+   * **Windows (PowerShell)**:
+     Add the directory containing `wpengine.exe` to your User PATH variable:
+     ```powershell
+     [System.Environment]::SetEnvironmentVariable(
+         "Path",
+         [System.Environment]::GetEnvironmentVariable("Path", "User") + ";$((Get-Item .).FullName)",
+         "User"
+     )
+     ```
+     *(Note: Restart your terminal after running this command for the changes to take effect.)*
+
+3. **Configure your Credentials**
    Set up your WP Engine API credentials and default account details:
    ```bash
    ./wpengine config set --username <api_username> --password <api_password> --account-id <default_account_uuid>
@@ -78,7 +98,7 @@ Copy the contents of the generated `.pub` file:
    - `--batch-concurrency <num>`: Set default maximum parallel update workers (default: `3`).
    - `--interactive <true|false>`: Enable/disable the interactive TUI by default.
 
-3. **Verify Configuration**
+4. **Verify Configuration**
    Confirm that your configuration is saved (sensitive values are masked):
    ```bash
    ./wpengine config show
@@ -100,10 +120,30 @@ List all environments linked to your account in a beautifully formatted table:
 ./wpengine env list
 ```
 
+You can also filter the environments by type using flags:
+* `-p, --production`: Filter to only production environments.
+* `-s, --staging`: Filter to only staging environments.
+* `-d, --dev`: Filter to only development environments.
+
+Example:
+```bash
+./wpengine env list --production
+```
+
 ### 3. View Sites
-List all top-level sites under your account:
+List all top-level sites under your account (including a column displaying their associated environments):
 ```bash
 ./wpengine site list
+```
+
+You can also filter the sites to show only those containing specific environment types using flags:
+* `-p, --production`: Filter to sites containing a production environment.
+* `-s, --staging`: Filter to sites containing a staging environment.
+* `-d, --dev`: Filter to sites containing a development environment.
+
+Example:
+```bash
+./wpengine site list --production --staging
 ```
 
 ### 4. Spin Up an Environment

@@ -2,10 +2,23 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
+
+	"wpengine-cli/internal/api"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
+)
+
+var (
+	siteListProd bool
+	siteListStg  bool
+	siteListDev  bool
+
+	prodStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("160")).Bold(true)
+	stgStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
+	devStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 )
 
 var siteCmd = &cobra.Command{
@@ -30,13 +43,62 @@ var siteListCmd = &cobra.Command{
 			return nil
 		}
 
+		// Fetch installs (environments) to associate with sites
+		installsResp, err := APIClient.GetInstalls(100, 0)
+		if err != nil {
+			return fmt.Errorf("failed to fetch environments: %w", err)
+		}
+
+		// Group installs by Site ID
+		siteInstalls := make(map[string][]api.Install)
+		for _, inst := range installsResp.Results {
+			if inst.Site.ID != "" {
+				siteInstalls[inst.Site.ID] = append(siteInstalls[inst.Site.ID], inst)
+			}
+		}
+
+		filtering := siteListProd || siteListStg || siteListDev
+
+		// Filter sites based on environment type flags
+		var filteredSites []api.Site
+		for _, site := range sitesResp.Results {
+			insts := siteInstalls[site.ID]
+			
+			if filtering {
+				match := false
+				for _, inst := range insts {
+					if siteListProd && inst.Environment == "production" {
+						match = true
+						break
+					}
+					if siteListStg && inst.Environment == "staging" {
+						match = true
+						break
+					}
+					if siteListDev && inst.Environment == "development" {
+						match = true
+						break
+					}
+				}
+				if !match {
+					continue
+				}
+			}
+			filteredSites = append(filteredSites, site)
+		}
+
+		if len(filteredSites) == 0 {
+			fmt.Println("\nNo sites matching the environment filters were found.")
+			return nil
+		}
+
 		fmt.Println("\n" + PrimaryStyle.Render("WP Engine Sites") + "\n")
 
 		// Create a Lipgloss table
 		t := table.New().
 			Border(lipgloss.RoundedBorder()).
 			BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("99"))).
-			Headers("ID", "Name", "Associated Account ID")
+			Headers("ID", "Name", "Environments", "Associated Account ID")
 
 		t.StyleFunc(func(row, col int) lipgloss.Style {
 			if row == table.HeaderRow {
@@ -49,17 +111,45 @@ var siteListCmd = &cobra.Command{
 			return lipgloss.NewStyle().Padding(0, 1)
 		})
 
-		for _, site := range sitesResp.Results {
-			t.Row(site.ID, site.Name, site.Account.ID)
+		for _, site := range filteredSites {
+			insts := siteInstalls[site.ID]
+			
+			// Format environments string
+			var envStrings []string
+			for _, inst := range insts {
+				var formatted string
+				switch inst.Environment {
+				case "production":
+					formatted = prodStyle.Render("prod") + fmt.Sprintf(" (%s)", inst.Name)
+				case "staging":
+					formatted = stgStyle.Render("stage") + fmt.Sprintf(" (%s)", inst.Name)
+				case "development":
+					formatted = devStyle.Render("dev") + fmt.Sprintf(" (%s)", inst.Name)
+				default:
+					formatted = inst.Environment + fmt.Sprintf(" (%s)", inst.Name)
+				}
+				envStrings = append(envStrings, formatted)
+			}
+			
+			envListStr := "-"
+			if len(envStrings) > 0 {
+				envListStr = strings.Join(envStrings, ", ")
+			}
+
+			t.Row(site.ID, site.Name, envListStr, site.Account.ID)
 		}
 
 		fmt.Println(t.Render())
-		fmt.Printf("\nTotal sites found: %d\n\n", len(sitesResp.Results))
+		fmt.Printf("\nTotal sites found: %d\n\n", len(filteredSites))
 		return nil
 	},
 }
 
 func init() {
+	siteListCmd.Flags().BoolVarP(&siteListProd, "production", "p", false, "Filter sites to only those with a production environment")
+	siteListCmd.Flags().BoolVarP(&siteListStg, "staging", "s", false, "Filter sites to only those with a staging environment")
+	siteListCmd.Flags().BoolVarP(&siteListDev, "dev", "d", false, "Filter sites to only those with a development environment")
+
 	siteCmd.AddCommand(siteListCmd)
 	RootCmd.AddCommand(siteCmd)
 }
