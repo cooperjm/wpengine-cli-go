@@ -90,6 +90,7 @@ type Model struct {
 	scope        string
 	dryRun       bool
 	concurrency  int
+	email        string
 	spinner      spinner.Model
 	msgChan      chan tea.Msg
 	done         bool
@@ -110,7 +111,7 @@ type JobUpdateMsg struct {
 type FinishedMsg struct{}
 
 // NewModel creates a new Bubble Tea model.
-func NewModel(jobs []*Job, client *api.Client, sshClient *ssh.Client, scope string, dryRun bool, concurrency int) *Model {
+func NewModel(jobs []*Job, client *api.Client, sshClient *ssh.Client, scope string, dryRun bool, concurrency int, email string) *Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(primaryColor)
@@ -122,6 +123,7 @@ func NewModel(jobs []*Job, client *api.Client, sshClient *ssh.Client, scope stri
 		scope:       scope,
 		dryRun:      dryRun,
 		concurrency: concurrency,
+		email:       email,
 		spinner:     s,
 		msgChan:     make(chan tea.Msg, len(jobs)*5),
 	}
@@ -268,6 +270,11 @@ func (m *Model) startWorkers() {
 func (m *Model) runJob(idx int) {
 	job := m.Jobs[idx]
 
+	if job.Status == "failed" {
+		m.msgChan <- JobUpdateMsg{Index: idx, Status: "failed", Err: job.Error}
+		return
+	}
+
 	// 1. Verify SSH Connection
 	m.msgChan <- JobUpdateMsg{Index: idx, Status: "verifying_ssh", Details: "Testing SSH Gateway connection..."}
 	err := m.sshClient.VerifyConnection(job.Name)
@@ -279,7 +286,11 @@ func (m *Model) runJob(idx int) {
 	// 2. Trigger Backup
 	m.msgChan <- JobUpdateMsg{Index: idx, Status: "backing_up", Details: "Requesting API backup checkpoint..."}
 	backupDesc := fmt.Sprintf("cli-pre-update-%d", time.Now().Unix())
-	backup, err := m.client.CreateBackup(job.ID, backupDesc)
+	var emails []string
+	if m.email != "" {
+		emails = []string{m.email}
+	}
+	backup, err := m.client.CreateBackup(job.ID, backupDesc, emails)
 	if err != nil {
 		m.msgChan <- JobUpdateMsg{Index: idx, Status: "failed", Err: fmt.Errorf("failed to trigger backup: %w", err)}
 		return

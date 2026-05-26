@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"wpengine-cli/internal/api"
+	"wpengine-cli/internal/config"
 	"wpengine-cli/internal/ui"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -24,6 +26,7 @@ var (
 	updateBatch      string
 	updateAllEnvs    bool
 	updateConcurrent int
+	updateEmail      string
 )
 
 var updateCmd = &cobra.Command{
@@ -82,13 +85,17 @@ completes, and then securely connects via SSH to run WordPress updates using WP-
 		}
 
 		// 3. Resolve Active Environments
-		installsResp, err := APIClient.GetInstalls(100, 0)
-		if err != nil {
-			return fmt.Errorf("failed to fetch environments from API: %w", err)
-		}
+		var installs []api.Install
+		var err error
 
 		if updateAllEnvs {
-			for _, inst := range installsResp.Results {
+			installs, err = APIClient.GetAllInstalls()
+			if err != nil {
+				return fmt.Errorf("failed to fetch environments from API: %w", err)
+			}
+			_ = config.SaveCache(installs)
+
+			for _, inst := range installs {
 				if inst.Status == "active" {
 					targets = append(targets, inst.Name)
 				}
@@ -102,8 +109,28 @@ completes, and then securely connects via SSH to run WordPress updates using WP-
 		// Resolve names to install objects
 		var resolvedJobs []*ui.Job
 		for _, target := range targets {
+			// First try resolving from cache
+			cachedInst, _ := config.ResolveFromCache(target)
+			if cachedInst != nil {
+				resolvedJobs = append(resolvedJobs, &ui.Job{
+					ID:     cachedInst.ID,
+					Name:   cachedInst.Name,
+					Status: "idle",
+				})
+				continue
+			}
+
+			// If not found in cache, fetch all installs from API (fallback)
+			if len(installs) == 0 {
+				installs, err = APIClient.GetAllInstalls()
+				if err != nil {
+					return fmt.Errorf("failed to fetch environments from API: %w", err)
+				}
+				_ = config.SaveCache(installs)
+			}
+
 			found := false
-			for _, inst := range installsResp.Results {
+			for _, inst := range installs {
 				if strings.EqualFold(inst.Name, target) || strings.EqualFold(inst.ID, target) {
 					resolvedJobs = append(resolvedJobs, &ui.Job{
 						ID:     inst.ID,
@@ -114,6 +141,7 @@ completes, and then securely connects via SSH to run WordPress updates using WP-
 					break
 				}
 			}
+
 			if !found {
 				// Add anyway, but status failed
 				resolvedJobs = append(resolvedJobs, &ui.Job{
@@ -137,7 +165,7 @@ completes, and then securely connects via SSH to run WordPress updates using WP-
 		// Select interactive TUI or static log mode
 		interactive := Cfg.Interactive && !NoInter
 		if interactive {
-			m := ui.NewModel(resolvedJobs, APIClient, SSHClient, scope, updateDryRun, concurrency)
+			m := ui.NewModel(resolvedJobs, APIClient, SSHClient, scope, updateDryRun, concurrency, updateEmail)
 			p := tea.NewProgram(m)
 			if _, err := p.Run(); err != nil {
 				return fmt.Errorf("TUI error: %w", err)
@@ -171,7 +199,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 			defer wg.Done()
 			for idx := range jobChan {
 				sem <- struct{}{}
-				
+
 				job := jobs[idx]
 				if job.Status == "failed" {
 					logMu.Lock()
@@ -200,7 +228,11 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 				logMu.Unlock()
 
 				backupDesc := fmt.Sprintf("cli-pre-update-%d", time.Now().Unix())
-				backup, err := APIClient.CreateBackup(job.ID, backupDesc)
+				var emails []string
+				if updateEmail != "" {
+					emails = []string{updateEmail}
+				}
+				backup, err := APIClient.CreateBackup(job.ID, backupDesc, emails)
 				if err != nil {
 					logMu.Lock()
 					ui.PrintLog("FAILED", job.Name, fmt.Sprintf("Backup failed: %v", err), lipgloss.Color("196"))
@@ -309,6 +341,7 @@ func init() {
 	updateCmd.Flags().StringVar(&updateBatch, "batch", "", "Comma-separated list of environment names, or path to a text file with targets")
 	updateCmd.Flags().BoolVar(&updateAllEnvs, "all-envs", false, "Update all active environments under the account")
 	updateCmd.Flags().IntVar(&updateConcurrent, "concurrency", 0, "Concurrency limit for updates (falls back to config batch_concurrency)")
+	updateCmd.Flags().StringVarP(&updateEmail, "email", "e", "", "Email address for WP Engine backup completion notifications")
 
 	RootCmd.AddCommand(updateCmd)
 }

@@ -13,6 +13,7 @@ This CLI features an automated backup system—polling the WP Engine API until a
 - **Interactive Dashboard**: A Bubble Tea TUI displaying active progress bars, spinners, and live logs.
 - **Non-Interactive Mode**: Outputs clean, colorized Lipgloss logs (`--no-interactive`) suited for automation and CI/CD pipelines.
 - **SSH Agent Support**: Connects securely to the WP Engine SSH Gateway using SSH key files or local SSH agents.
+- **Local Environment Cache**: Resolves target environment UUIDs instantly using a local configuration cache (`~/.wpengine-cli-cache.json`) built automatically when listing sites or environments.
 
 ---
 
@@ -104,6 +105,13 @@ Copy the contents of the generated `.pub` file:
    ./wpengine config show
    ```
 
+5. **Initialize the Environment Cache**
+   To speed up updates and checks, initialize your local environment cache by listing your sites:
+   ```bash
+   ./wpengine site list
+   ```
+   *(This fetches all sites and environments across your accounts and saves them to `~/.wpengine-cli-cache.json` for rapid, zero-API environment name resolution.)*
+
 ---
 
 ## Usage Guide
@@ -173,6 +181,11 @@ Check updates across all active environments concurrently:
 Update a single website (triggers backup, polls progress, runs SSH update):
 ```bash
 ./wpengine update my-dev-sandbox --plugins
+```
+
+You can optionally specify one or more email addresses for WP Engine backup completion notifications using the `-e, --email` flag (if not provided, it defaults to a quiet `no-reply@wpengine.com`):
+```bash
+./wpengine update my-dev-sandbox --plugins --email admin@example.com
 ```
 
 Run a dry-run check updating core, plugins, and themes on all active environments in parallel:

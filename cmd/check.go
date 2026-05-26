@@ -8,10 +8,16 @@ import (
 	"sync"
 
 	"wpengine-cli/internal/api"
+	"wpengine-cli/internal/config"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
 )
+
+type targetInfo struct {
+	name string
+	id   string
+}
 
 var (
 	checkAllEnvs    bool
@@ -41,11 +47,11 @@ type ThemeUpdateInfo struct {
 
 // SiteCheckResult stores the check status for a specific site
 type SiteCheckResult struct {
-	EnvName    string
-	CoreNeed   []CoreUpdateInfo
+	EnvName     string
+	CoreNeed    []CoreUpdateInfo
 	PluginsNeed []PluginUpdateInfo
 	ThemesNeed  []ThemeUpdateInfo
-	Err        error
+	Err         error
 }
 
 var checkCmd = &cobra.Command{
@@ -94,13 +100,18 @@ identify available updates for WordPress core, plugins, and themes.`,
 			}
 		}
 
-		installsResp, err := APIClient.GetInstalls(100, 0)
-		if err != nil {
-			return fmt.Errorf("failed to fetch environments: %w", err)
-		}
+		// 3. Resolve Active Environments
+		var installs []api.Install
+		var err error
 
 		if checkAllEnvs {
-			for _, inst := range installsResp.Results {
+			installs, err = APIClient.GetAllInstalls()
+			if err != nil {
+				return fmt.Errorf("failed to fetch environments: %w", err)
+			}
+			_ = config.SaveCache(installs)
+
+			for _, inst := range installs {
 				if inst.Status == "active" {
 					targets = append(targets, inst.Name)
 				}
@@ -120,41 +131,53 @@ identify available updates for WordPress core, plugins, and themes.`,
 			concurrency = 3
 		}
 
+		// Resolve names to installs
+		var resolved []targetInfo
+		for _, target := range targets {
+			// Try resolving from cache first
+			cachedInst, _ := config.ResolveFromCache(target)
+			if cachedInst != nil {
+				resolved = append(resolved, targetInfo{name: cachedInst.Name, id: cachedInst.ID})
+				continue
+			}
+
+			// Fetch from API if not cached (fallback)
+			if len(installs) == 0 {
+				installs, err = APIClient.GetAllInstalls()
+				if err != nil {
+					return fmt.Errorf("failed to fetch environments: %w", err)
+				}
+				_ = config.SaveCache(installs)
+			}
+
+			found := false
+			for _, inst := range installs {
+				if strings.EqualFold(inst.Name, target) || strings.EqualFold(inst.ID, target) {
+					resolved = append(resolved, targetInfo{name: inst.Name, id: inst.ID})
+					found = true
+					break
+				}
+			}
+			if !found {
+				// Print error directly for missing ones
+				badge := lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" ERROR ")
+				fmt.Printf("%s %s: Environment not found or inactive in account\n", badge, target)
+			}
+		}
+
+		if len(resolved) == 0 {
+			return nil
+		}
+
 		// Run checks
-		runChecks(targets, installsResp.Results, concurrency)
+		runChecks(resolved, concurrency)
 		return nil
 	},
 }
 
-func runChecks(targets []string, installs []api.Install, concurrency int) {
+func runChecks(resolved []targetInfo, concurrency int) {
 	fmt.Println("\n" + lipgloss.NewStyle().Background(lipgloss.Color("39")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" CHECKING ") + " Scanning environments for available updates...")
-	fmt.Printf("Targets: %d | Concurrency: %d\n\n", len(targets), concurrency)
-
-	// Resolve names
-	type targetInfo struct {
-		name string
-		id   string
-	}
-	var resolved []targetInfo
-	for _, target := range targets {
-		found := false
-		for _, inst := range installs {
-			if strings.EqualFold(inst.Name, target) || strings.EqualFold(inst.ID, target) {
-				resolved = append(resolved, targetInfo{name: inst.Name, id: inst.ID})
-				found = true
-				break
-			}
-		}
-		if !found {
-			// Print error directly for missing ones
-			badge := lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" ERROR ")
-			fmt.Printf("%s %s: Environment not found or inactive in account\n", badge, target)
-		}
-	}
-
-	if len(resolved) == 0 {
-		return
-	}
+	fmt.Printf("Targets: %d | Concurrency: %d\n\n", len(resolved), concurrency)
 
 	jobChan := make(chan targetInfo, len(resolved))
 	for _, r := range resolved {
@@ -172,9 +195,9 @@ func runChecks(targets []string, installs []api.Install, concurrency int) {
 			defer wg.Done()
 			for r := range jobChan {
 				sem <- struct{}{}
-				
+
 				res := checkEnvironmentUpdates(r.name)
-				
+
 				printMu.Lock()
 				renderCheckResult(res)
 				printMu.Unlock()

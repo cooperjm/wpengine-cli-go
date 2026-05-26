@@ -165,6 +165,44 @@ func (c *Client) GetInstalls(limit, offset int) (*InstallsResponse, error) {
 	return &resp, nil
 }
 
+// GetAllSites retrieves all sites across all pages.
+func (c *Client) GetAllSites() ([]Site, error) {
+	var allSites []Site
+	limit := 100
+	offset := 0
+	for {
+		resp, err := c.GetSites(limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		allSites = append(allSites, resp.Results...)
+		if len(resp.Results) < limit || len(allSites) >= resp.Count {
+			break
+		}
+		offset += limit
+	}
+	return allSites, nil
+}
+
+// GetAllInstalls retrieves all WordPress installs across all pages.
+func (c *Client) GetAllInstalls() ([]Install, error) {
+	var allInstalls []Install
+	limit := 100
+	offset := 0
+	for {
+		resp, err := c.GetInstalls(limit, offset)
+		if err != nil {
+			return nil, err
+		}
+		allInstalls = append(allInstalls, resp.Results...)
+		if len(resp.Results) < limit || len(allInstalls) >= resp.Count {
+			break
+		}
+		offset += limit
+	}
+	return allInstalls, nil
+}
+
 // GetInstall retrieves details of a specific install.
 func (c *Client) GetInstall(installID string) (*Install, error) {
 	body, err := c.doRequest("GET", fmt.Sprintf("/installs/%s", installID), nil, nil)
@@ -205,8 +243,14 @@ func (c *Client) DeleteInstall(installID string) error {
 }
 
 // CreateBackup triggers a backup checkpoint for an install.
-func (c *Client) CreateBackup(installID string, description string) (*Backup, error) {
-	req := CreateBackupRequest{Description: description}
+func (c *Client) CreateBackup(installID string, description string, emails []string) (*Backup, error) {
+	if len(emails) == 0 {
+		emails = []string{"no-reply@wpengine.com"}
+	}
+	req := CreateBackupRequest{
+		Description:        description,
+		NotificationEmails: emails,
+	}
 	reqBody, err := json.Marshal(req)
 	if err != nil {
 		return nil, err

@@ -13,12 +13,12 @@ import (
 )
 
 var (
-	CfgFile     string
-	Verbose     bool
-	NoInter     bool
-	Cfg         *config.Config
-	APIClient   *api.Client
-	SSHClient   *ssh.Client
+	CfgFile      string
+	Verbose      bool
+	NoInter      bool
+	Cfg          *config.Config
+	APIClient    *api.Client
+	SSHClient    *ssh.Client
 	PrimaryStyle lipgloss.Style
 )
 

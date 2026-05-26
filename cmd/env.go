@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"wpengine-cli/internal/api"
+	"wpengine-cli/internal/config"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
@@ -11,10 +12,10 @@ import (
 )
 
 var (
-	envAccountID   string
-	envSiteID      string
-	envType        string
-	envName        string
+	envAccountID string
+	envSiteID    string
+	envType      string
+	envName      string
 
 	envListProd bool
 	envListStg  bool
@@ -33,20 +34,25 @@ var envListCmd = &cobra.Command{
 		return RequireAPI()
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		installsResp, err := APIClient.GetInstalls(100, 0)
+		installs, err := APIClient.GetAllInstalls()
 		if err != nil {
 			return fmt.Errorf("failed to fetch environments: %w", err)
 		}
 
-		if len(installsResp.Results) == 0 {
+		if len(installs) == 0 {
 			fmt.Println("\nNo environments found.")
 			return nil
+		}
+
+		// Save the retrieved installs to the local cache
+		if err := config.SaveCache(installs); err != nil {
+			fmt.Printf("Warning: failed to save environments cache: %v\n", err)
 		}
 
 		filtering := envListProd || envListStg || envListDev
 
 		var filteredInstalls []api.Install
-		for _, inst := range installsResp.Results {
+		for _, inst := range installs {
 			if filtering {
 				if envListProd && inst.Environment == "production" {
 					filteredInstalls = append(filteredInstalls, inst)
@@ -102,7 +108,7 @@ var envListCmd = &cobra.Command{
 				case "staging":
 					return lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Padding(0, 1) // amber
 				default:
-					return lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true).Padding(0, 1)  // blue
+					return lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true).Padding(0, 1) // blue
 				}
 			}
 			// Colorize status column

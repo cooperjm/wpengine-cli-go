@@ -86,5 +86,6 @@ type Backup struct {
 
 // CreateBackupRequest is the request payload to trigger a backup.
 type CreateBackupRequest struct {
-	Description string `json:"description"`
+	Description        string   `json:"description"`
+	NotificationEmails []string `json:"notification_emails"`
 }

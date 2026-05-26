@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"wpengine-cli/internal/api"
+	"wpengine-cli/internal/config"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
@@ -33,25 +34,30 @@ var siteListCmd = &cobra.Command{
 		return RequireAPI()
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		sitesResp, err := APIClient.GetSites(100, 0)
+		sites, err := APIClient.GetAllSites()
 		if err != nil {
 			return fmt.Errorf("failed to fetch sites: %w", err)
 		}
 
-		if len(sitesResp.Results) == 0 {
+		if len(sites) == 0 {
 			fmt.Println("\nNo sites found.")
 			return nil
 		}
 
 		// Fetch installs (environments) to associate with sites
-		installsResp, err := APIClient.GetInstalls(100, 0)
+		installs, err := APIClient.GetAllInstalls()
 		if err != nil {
 			return fmt.Errorf("failed to fetch environments: %w", err)
 		}
 
+		// Save the retrieved installs to the local cache
+		if err := config.SaveCache(installs); err != nil {
+			fmt.Printf("Warning: failed to save environments cache: %v\n", err)
+		}
+
 		// Group installs by Site ID
 		siteInstalls := make(map[string][]api.Install)
-		for _, inst := range installsResp.Results {
+		for _, inst := range installs {
 			if inst.Site.ID != "" {
 				siteInstalls[inst.Site.ID] = append(siteInstalls[inst.Site.ID], inst)
 			}
@@ -61,9 +67,9 @@ var siteListCmd = &cobra.Command{
 
 		// Filter sites based on environment type flags
 		var filteredSites []api.Site
-		for _, site := range sitesResp.Results {
+		for _, site := range sites {
 			insts := siteInstalls[site.ID]
-			
+
 			if filtering {
 				match := false
 				for _, inst := range insts {
@@ -113,7 +119,7 @@ var siteListCmd = &cobra.Command{
 
 		for _, site := range filteredSites {
 			insts := siteInstalls[site.ID]
-			
+
 			// Format environments string
 			var envStrings []string
 			for _, inst := range insts {
@@ -130,7 +136,7 @@ var siteListCmd = &cobra.Command{
 				}
 				envStrings = append(envStrings, formatted)
 			}
-			
+
 			envListStr := "-"
 			if len(envStrings) > 0 {
 				envListStr = strings.Join(envStrings, ", ")
