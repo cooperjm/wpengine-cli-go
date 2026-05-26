@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -87,6 +88,7 @@ func (c *Client) RunWPCLI(envName string, wpArgs ...string) (string, string, err
 		User:            envName,
 		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(), // WP Engine keys can rotate, ignoring is standard for this CLI
+		Timeout:         10 * time.Second,
 	}
 
 	host := fmt.Sprintf("%s.ssh.wpengine.net:22", envName)
@@ -138,6 +140,7 @@ func (c *Client) VerifyConnection(envName string) error {
 		User:            envName,
 		Auth:            authMethods,
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         10 * time.Second,
 	}
 
 	host := fmt.Sprintf("%s.ssh.wpengine.net:22", envName)

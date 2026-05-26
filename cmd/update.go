@@ -158,7 +158,7 @@ completes, and then securely connects via SSH to run WordPress updates using WP-
 			concurrency = Cfg.BatchConcurrency
 		}
 		if concurrency <= 0 {
-			concurrency = 3
+			concurrency = 10
 		}
 
 		// 4. Run Execution Loop
@@ -172,6 +172,11 @@ completes, and then securely connects via SSH to run WordPress updates using WP-
 			}
 		} else {
 			runNonInteractive(resolvedJobs, scope, concurrency)
+		}
+
+		// 5. Update Check Results Cache if not a dry-run
+		if !updateDryRun {
+			updateCachedCheckResults(resolvedJobs, scope)
 		}
 
 		return nil
@@ -218,6 +223,8 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 					logMu.Lock()
 					ui.PrintLog("FAILED", job.Name, fmt.Sprintf("SSH connection failed: %v", err), lipgloss.Color("196"))
 					logMu.Unlock()
+					job.Status = "failed"
+					job.Error = err
 					<-sem
 					continue
 				}
@@ -237,6 +244,8 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 					logMu.Lock()
 					ui.PrintLog("FAILED", job.Name, fmt.Sprintf("Backup failed: %v", err), lipgloss.Color("196"))
 					logMu.Unlock()
+					job.Status = "failed"
+					job.Error = err
 					<-sem
 					continue
 				}
@@ -259,6 +268,8 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 							logMu.Lock()
 							ui.PrintLog("FAILED", job.Name, fmt.Sprintf("Backup polling failed: %v", err), lipgloss.Color("196"))
 							logMu.Unlock()
+							job.Status = "failed"
+							job.Error = err
 							backupSuccess = false
 							break pollLoop
 						}
@@ -311,6 +322,8 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 				logMu.Lock()
 				if err != nil {
 					ui.PrintLog("FAILED", job.Name, fmt.Sprintf("Update failed: %v (stderr: %s)", err, stderr), lipgloss.Color("196"))
+					job.Status = "failed"
+					job.Error = err
 				} else {
 					summary := strings.TrimSpace(stdout)
 					if summary == "" {
@@ -320,6 +333,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 						summary = lines[len(lines)-1] // Show last line for brevity
 					}
 					ui.PrintLog("SUCCESS", job.Name, summary, lipgloss.Color("46"))
+					job.Status = "completed"
 				}
 				logMu.Unlock()
 

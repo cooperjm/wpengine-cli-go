@@ -37,7 +37,7 @@ func Load() (*Config, error) {
 	}
 
 	cfg := &Config{
-		BatchConcurrency: 3,
+		BatchConcurrency: 10,
 		Interactive:      true,
 	}
 

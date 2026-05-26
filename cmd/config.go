@@ -124,7 +124,7 @@ func init() {
 	configSetCmd.Flags().StringVar(&setAccountID, "account-id", "", "Default WP Engine Account ID")
 	configSetCmd.Flags().StringVar(&setSSHKeyPath, "ssh-key-path", "", "Path to SSH private key file")
 	configSetCmd.Flags().StringVar(&setSSHPassphrase, "ssh-passphrase", "", "Passphrase for decrypting SSH private key")
-	configSetCmd.Flags().IntVar(&setBatchLimit, "batch-concurrency", 3, "Maximum number of parallel updates")
+	configSetCmd.Flags().IntVar(&setBatchLimit, "batch-concurrency", 10, "Maximum number of parallel updates")
 	configSetCmd.Flags().StringVar(&setInteractive, "interactive", "", "Enable or disable interactive TUI dashboard (true/false)")
 
 	configCmd.AddCommand(configShowCmd)

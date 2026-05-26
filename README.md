@@ -96,7 +96,7 @@ Copy the contents of the generated `.pub` file:
    *Optional flags for `config set`:*
    - `--ssh-key-path <path>`: Specify a custom SSH private key (default is autodetected).
    - `--ssh-passphrase <passphrase>`: Set a passphrase if your key is encrypted.
-   - `--batch-concurrency <num>`: Set default maximum parallel update workers (default: `3`).
+   - `--batch-concurrency <num>`: Set default maximum parallel update workers (default: `10`).
    - `--interactive <true|false>`: Enable/disable the interactive TUI by default.
 
 4. **Verify Configuration**
@@ -167,7 +167,7 @@ Terminate an install using its ID:
 ```
 
 ### 6. Check for Outstanding Updates
-Check which WordPress core, plugins, or themes have updates available on an environment:
+Check which WordPress core, plugins, or themes have updates available on a single environment:
 ```bash
 ./wpengine check my-dev-sandbox
 ```
@@ -176,6 +176,22 @@ Check updates across all active environments concurrently:
 ```bash
 ./wpengine check --all-envs
 ```
+
+**Minimal Output Flag**
+To minimize verbose output and display a summary table of the environments' update status:
+```bash
+./wpengine check --all-envs --minimal
+# or
+./wpengine check --all-envs -m
+```
+
+**Cached Results & No-Flag Default**
+Every check run automatically caches its results locally to `~/.wpengine-cli-check-results.json` along with a timestamp. 
+* To view the cached summary table of the last check run without hitting the API or SSH, simply run the command with no flags or arguments:
+  ```bash
+  ./wpengine check
+  ```
+* **Auto-update Sync**: When you run `./wpengine update` successfully on an environment, the local cache is automatically updated in real-time to remove the updated items, keeping your cached check results in sync.
 
 ### 7. Run Website Updates
 Update a single website (triggers backup, polls progress, runs SSH update):
@@ -208,3 +224,9 @@ Run updates from a batch list file (one environment name per line):
 - `internal/ssh/`: SSH client connecting to WP Engine Gateway to run `wp-cli`.
 - `internal/ui/`: Bubble Tea and Lipgloss CLI components.
 - `internal/config/`: Config Loader and Writer (`~/.wpengine-cli.yaml`).
+
+---
+
+## Disclaimer
+
+This is a fun, unofficial hobby project and is not affiliated with, authorized, maintained, sponsored, or endorsed by WP Engine.
