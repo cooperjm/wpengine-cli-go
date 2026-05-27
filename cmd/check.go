@@ -204,6 +204,10 @@ var checkCmd = &cobra.Command{
 	Short: "Check for WordPress core, plugin, and theme updates",
 	Long: `Securely connects via SSH to the targeted environments and queries WP-CLI to 
 identify available updates for WordPress core, plugins, and themes.`,
+	Example: `  wpengine check my-dev-sandbox
+  wpengine check --all-envs --minimal
+  wpengine check --batch target_envs.txt --output json
+  wpengine check`,
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		return RequireAPI()
 	},
@@ -283,6 +287,9 @@ identify available updates for WordPress core, plugins, and themes.`,
 				}
 
 				timeStr := cached.Timestamp.Format("Jan 02, 2006 at 3:04 PM")
+				if OutputFormat == "json" {
+					return printCheckResultsJSON(results, cached.Timestamp, true)
+				}
 				fmt.Println("\n" + lipgloss.NewStyle().Background(lipgloss.Color("99")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" CACHED RESULTS ") + " Displaying results from check run on " + timeStr)
 				fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render("Run 'wpengine check --all-envs' (or with specific targets) to scan for live updates.") + "\n")
 
@@ -393,7 +400,10 @@ identify available updates for WordPress core, plugins, and themes.`,
 		}
 
 		// Run checks
-		runChecks(resolved, concurrency)
+		results := runChecks(resolved, concurrency)
+		if OutputFormat == "json" {
+			return printCheckResultsJSON(results, time.Now(), false)
+		}
 		return nil
 	},
 }
@@ -403,9 +413,11 @@ type checkJob struct {
 	index  int
 }
 
-func runChecks(resolved []targetInfo, concurrency int) {
-	fmt.Println("\n" + lipgloss.NewStyle().Background(lipgloss.Color("39")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" CHECKING ") + " Scanning environments for available updates...")
-	fmt.Printf("Targets: %d | Concurrency: %d\n\n", len(resolved), concurrency)
+func runChecks(resolved []targetInfo, concurrency int) []SiteCheckResult {
+	if OutputFormat != "json" {
+		fmt.Println("\n" + lipgloss.NewStyle().Background(lipgloss.Color("39")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" CHECKING ") + " Scanning environments for available updates...")
+		fmt.Printf("Targets: %d | Concurrency: %d\n\n", len(resolved), concurrency)
+	}
 
 	jobChan := make(chan checkJob, len(resolved))
 	for idx, r := range resolved {
@@ -431,7 +443,9 @@ func runChecks(resolved []targetInfo, concurrency int) {
 				res := checkEnvironmentUpdates(j.target.name, j.target.envType)
 				results[j.index] = res
 
-				if checkMinimal {
+				if OutputFormat == "json" {
+					// Keep JSON output clean for automation.
+				} else if checkMinimal {
 					countMu.Lock()
 					completedCount++
 					fmt.Printf("\r\033[K%s Scanned %d/%d environments...", lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).Render("●"), completedCount, len(resolved))
@@ -449,12 +463,50 @@ func runChecks(resolved []targetInfo, concurrency int) {
 
 	wg.Wait()
 
-	if checkMinimal {
+	if OutputFormat != "json" && checkMinimal {
 		fmt.Print("\r\033[K") // Clear the progress line
 		renderSummaryTable(results)
 	}
 
 	_ = saveCheckResults(results)
+	return results
+}
+
+func printCheckResultsJSON(results []SiteCheckResult, timestamp time.Time, cached bool) error {
+	type checkResult struct {
+		EnvName     string             `json:"env_name"`
+		EnvType     string             `json:"env_type"`
+		CoreNeed    []CoreUpdateInfo   `json:"core_need,omitempty"`
+		PluginsNeed []PluginUpdateInfo `json:"plugins_need,omitempty"`
+		ThemesNeed  []ThemeUpdateInfo  `json:"themes_need,omitempty"`
+		Error       string             `json:"error,omitempty"`
+	}
+	payload := struct {
+		Cached    bool          `json:"cached"`
+		Timestamp time.Time     `json:"timestamp"`
+		Results   []checkResult `json:"results"`
+	}{Cached: cached, Timestamp: timestamp}
+
+	for _, result := range results {
+		item := checkResult{
+			EnvName:     result.EnvName,
+			EnvType:     result.EnvType,
+			CoreNeed:    result.CoreNeed,
+			PluginsNeed: result.PluginsNeed,
+			ThemesNeed:  result.ThemesNeed,
+		}
+		if result.Err != nil {
+			item.Error = result.Err.Error()
+		}
+		payload.Results = append(payload.Results, item)
+	}
+
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
+	return nil
 }
 
 func renderSummaryTable(results []SiteCheckResult) {

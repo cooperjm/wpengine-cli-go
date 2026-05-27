@@ -8,6 +8,7 @@ import (
 
 	"wpengine-cli/internal/api"
 	"wpengine-cli/internal/ssh"
+	"wpengine-cli/internal/ux"
 
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
@@ -42,32 +43,42 @@ var (
 			Foreground(primaryColor).
 			Bold(true).
 			Padding(0, 1)
+
+	plainOutput bool
 )
+
+func SetPlainOutput(plain bool) {
+	plainOutput = plain
+}
 
 // GetStatusBadge returns a lipgloss styled badge for the job status.
 func GetStatusBadge(status string) string {
 	switch status {
 	case "idle":
-		return lipgloss.NewStyle().Background(mutedColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" PENDING ")
+		return ux.Badge("PENDING", mutedColor, plainOutput)
 	case "verifying_ssh":
-		return lipgloss.NewStyle().Background(infoColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" VERIFY SSH ")
+		return ux.Badge("VERIFY SSH", infoColor, plainOutput)
 	case "backing_up":
-		return lipgloss.NewStyle().Background(warningColor).Foreground(lipgloss.Color("232")).Bold(true).Padding(0, 1).Render(" BACKUP INITIATED ")
+		return ux.Badge("BACKUP INITIATED", warningColor, plainOutput)
 	case "polling_backup":
-		return lipgloss.NewStyle().Background(warningColor).Foreground(lipgloss.Color("232")).Bold(true).Padding(0, 1).Render(" BACKING UP ")
+		return ux.Badge("BACKING UP", warningColor, plainOutput)
 	case "updating":
-		return lipgloss.NewStyle().Background(primaryColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" UPDATING ")
+		return ux.Badge("UPDATING", primaryColor, plainOutput)
 	case "completed":
-		return lipgloss.NewStyle().Background(successColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" SUCCESS ")
+		return ux.Badge("SUCCESS", successColor, plainOutput)
 	case "failed":
-		return lipgloss.NewStyle().Background(errorColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" FAILED ")
+		return ux.Badge("FAILED", errorColor, plainOutput)
 	default:
-		return lipgloss.NewStyle().Background(mutedColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" " + strings.ToUpper(status) + " ")
+		return ux.Badge(strings.ToUpper(status), mutedColor, plainOutput)
 	}
 }
 
 // PrintLog prints a styled message for non-interactive output (CI/CD environments).
 func PrintLog(badge, name, message string, color lipgloss.Color) {
+	if plainOutput {
+		fmt.Printf("[%s] %s: %s\n", badge, name, message)
+		return
+	}
 	badgeStyle := lipgloss.NewStyle().Background(color).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1)
 	nameStyle := lipgloss.NewStyle().Foreground(primaryColor).Bold(true)
 	fmt.Printf("%s %s: %s\n", badgeStyle.Render(badge), nameStyle.Render(name), message)
@@ -77,6 +88,7 @@ func PrintLog(badge, name, message string, color lipgloss.Color) {
 type Job struct {
 	ID      string
 	Name    string
+	EnvType string
 	Status  string // idle, verifying_ssh, backing_up, polling_backup, updating, completed, failed
 	Details string
 	Error   error
@@ -84,19 +96,19 @@ type Job struct {
 
 // Bubble Tea Model for Interactive Dashboard
 type Model struct {
-	Jobs         []*Job
-	client       *api.Client
-	sshClient    *ssh.Client
-	scope        string
-	dryRun       bool
-	concurrency  int
-	email        string
-	spinner      spinner.Model
-	msgChan      chan tea.Msg
-	done         bool
-	quitting     bool
-	wg           sync.WaitGroup
-	mu           sync.Mutex
+	Jobs        []*Job
+	client      *api.Client
+	sshClient   *ssh.Client
+	scope       string
+	dryRun      bool
+	concurrency int
+	email       string
+	spinner     spinner.Model
+	msgChan     chan tea.Msg
+	done        bool
+	quitting    bool
+	wg          sync.WaitGroup
+	mu          sync.Mutex
 }
 
 // JobUpdateMsg is sent when a job's status updates.
@@ -281,7 +293,7 @@ func (m *Model) View() string {
 		m.mu.Unlock()
 
 		badge := GetStatusBadge(status)
-		
+
 		var statusText string
 		if status == "failed" && err != nil {
 			statusText = lipgloss.NewStyle().Foreground(errorColor).Render(err.Error())

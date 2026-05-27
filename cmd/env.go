@@ -6,6 +6,7 @@ import (
 
 	"wpengine-cli/internal/api"
 	"wpengine-cli/internal/config"
+	"wpengine-cli/internal/ux"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
@@ -202,11 +203,18 @@ var envDeleteCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		installID := args[0]
 
+		ok, err := ux.Confirm(fmt.Sprintf("Delete environment %s? This cannot be undone.", installID), AssumeYes)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("delete cancelled")
+		}
+
 		badgeWarning := lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" DELETING ")
 		fmt.Printf("\n%s Requesting deletion of environment ID: %s...\n", badgeWarning, installID)
 
-		err := APIClient.DeleteInstall(installID)
-		if err != nil {
+		if err := APIClient.DeleteInstall(installID); err != nil {
 			return fmt.Errorf("failed to delete environment: %w", err)
 		}
 

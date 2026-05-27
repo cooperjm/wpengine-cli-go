@@ -3,10 +3,12 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"wpengine-cli/internal/api"
 	"wpengine-cli/internal/config"
 	"wpengine-cli/internal/ssh"
+	"wpengine-cli/internal/ui"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/spf13/cobra"
@@ -16,6 +18,9 @@ var (
 	CfgFile      string
 	Verbose      bool
 	NoInter      bool
+	PlainOutput  bool
+	OutputFormat string
+	AssumeYes    bool
 	Cfg          *config.Config
 	APIClient    *api.Client
 	SSHClient    *ssh.Client
@@ -24,11 +29,27 @@ var (
 
 // RootCmd represents the base command when called without any subcommands.
 var RootCmd = &cobra.Command{
-	Use:   "wpengine",
-	Short: "WP Engine Management CLI",
+	Use:           "wpengine",
+	Short:         "WP Engine Management CLI",
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	Long: `A premium Go CLI tool to manage your WP Engine sites, environments (installs), 
 backups, and automated updates with secure SSH execution.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if OutputFormat != "" {
+			OutputFormat = strings.ToLower(OutputFormat)
+		}
+		if OutputFormat == "" {
+			OutputFormat = "text"
+		}
+		if OutputFormat != "text" && OutputFormat != "json" {
+			return fmt.Errorf("unsupported output format %q (use text or json)", OutputFormat)
+		}
+		if CfgFile != "" {
+			config.SetConfigPath(CfgFile)
+		}
+		ui.SetPlainOutput(PlainOutput)
+
 		// Load config
 		var err error
 		Cfg, err = config.Load()
@@ -61,6 +82,9 @@ func init() {
 	RootCmd.PersistentFlags().StringVar(&CfgFile, "config", "", "config file (default is $HOME/.wpengine-cli.yaml)")
 	RootCmd.PersistentFlags().BoolVarP(&Verbose, "verbose", "v", false, "enable verbose output")
 	RootCmd.PersistentFlags().BoolVar(&NoInter, "no-interactive", false, "disable interactive TUI dashboard (useful for CI/CD)")
+	RootCmd.PersistentFlags().BoolVar(&PlainOutput, "plain", false, "disable colors, borders, and Unicode symbols")
+	RootCmd.PersistentFlags().StringVar(&OutputFormat, "output", "text", "output format: text or json")
+	RootCmd.PersistentFlags().BoolVarP(&AssumeYes, "yes", "y", false, "skip confirmation prompts")
 }
 
 // RequireAPI ensures the API client is fully configured before running API-dependent commands.

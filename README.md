@@ -11,7 +11,9 @@ This CLI features an automated backup system—polling the WP Engine API until a
 - **Automated Backup Assurance**: Every update is preceded by an API-triggered backup checkpoint, verified via real-time status polling.
 - **Selective & Batch Updates**: Run updates on single environments or batches via CSV/files or all active environments. Support for `--plugins`, `--themes`, `--core`, and `--dry-run`.
 - **Interactive Dashboard**: A Bubble Tea TUI displaying active progress bars, spinners, and live logs.
-- **Non-Interactive Mode**: Outputs clean, colorized Lipgloss logs (`--no-interactive`) suited for automation and CI/CD pipelines.
+- **Guided Setup & Doctor Checks**: Use `config configure` for first-time setup and `doctor` to verify config, API access, SSH keys, cache readiness, and terminal compatibility.
+- **Non-Interactive Mode**: Outputs clean logs (`--no-interactive`) suited for automation and CI/CD pipelines, with `--output json` and `--plain` available for stable machine-readable output.
+- **Safety Confirmations**: Multi-target and production updates show a review step before running. Use `--yes` only for trusted automation.
 - **SSH Agent Support**: Connects securely to the WP Engine SSH Gateway using SSH key files or local SSH agents.
 - **Local Environment Cache**: Resolves target environment UUIDs instantly using a local configuration cache (`~/.wpengine-cli-cache.json`) built automatically when listing sites or environments.
 
@@ -88,7 +90,12 @@ Copy the contents of the generated `.pub` file:
      *(Note: Restart your terminal after running this command for the changes to take effect.)*
 
 3. **Configure your Credentials**
-   Set up your WP Engine API credentials and default account details:
+   For first-time setup, run the guided configuration flow:
+   ```bash
+   ./wpengine config configure
+   ```
+
+   You can also set values directly:
    ```bash
    ./wpengine config set --username <api_username> --password <api_password> --account-id <default_account_uuid>
    ```
@@ -105,6 +112,16 @@ Copy the contents of the generated `.pub` file:
    ./wpengine config show
    ```
 
+   Then run the setup doctor to verify config, API access, SSH key readability, cache state, and terminal output compatibility:
+   ```bash
+   ./wpengine doctor
+   ```
+
+   To rebuild the local environment cache during the doctor check:
+   ```bash
+   ./wpengine doctor --refresh-cache
+   ```
+
 5. **Initialize the Environment Cache**
    To speed up updates and checks, initialize your local environment cache by listing your sites:
    ```bash
@@ -115,6 +132,15 @@ Copy the contents of the generated `.pub` file:
 ---
 
 ## Usage Guide
+
+### Global UX Flags
+These flags are available on all commands:
+
+* `--output text|json`: Select human-readable text output or JSON for automation.
+* `--plain`: Disable colors, borders, and Unicode symbols for terminals that render styled output poorly.
+* `--no-interactive`: Disable the Bubble Tea dashboard.
+* `-y, --yes`: Skip confirmation prompts for trusted automation.
+* `-v, --verbose`: Enable verbose output.
 
 ### 1. View Accounts
 List all WP Engine accounts you have access to, displaying their UUIDs for easy copying:
@@ -165,6 +191,7 @@ Terminate an install using its ID:
 ```bash
 ./wpengine env delete <install_uuid>
 ```
+Deletion prompts for confirmation. In non-interactive automation, pass `--yes` only when the target has already been verified.
 
 ### 6. Check for Outstanding Updates
 Check which WordPress core, plugins, or themes have updates available on a single environment:
@@ -183,6 +210,12 @@ To minimize verbose output and display a summary table of the environments' upda
 ./wpengine check --all-envs --minimal
 # or
 ./wpengine check --all-envs -m
+```
+
+**JSON Output**
+For CI or reporting workflows, return structured results:
+```bash
+./wpengine check --all-envs --output json
 ```
 
 **Cached Results & No-Flag Default**
@@ -214,15 +247,26 @@ Run updates from a batch list file (one environment name per line):
 ./wpengine update --plugins --batch target_envs.txt --no-interactive
 ```
 
+For multi-target or production updates, the CLI prints a review summary before running. It includes target count, production count, scope, concurrency, and backup notification email. Use `--yes` to skip this prompt in automation:
+```bash
+./wpengine update --all-envs --all --no-interactive --yes
+```
+
+For machine-readable update results:
+```bash
+./wpengine update --batch target_envs.txt --plugins --output json --yes
+```
+
 ---
 
 ## Code Architecture
 
 - `main.go`: App entrypoint.
-- `cmd/`: Command definitions using Cobra (`root`, `config`, `env`, `site`, `update`).
+- `cmd/`: Command definitions using Cobra (`root`, `config`, `doctor`, `env`, `site`, `check`, `update`).
 - `internal/api/`: WP Engine API client implementation & models.
 - `internal/ssh/`: SSH client connecting to WP Engine Gateway to run `wp-cli`.
 - `internal/ui/`: Bubble Tea and Lipgloss CLI components.
+- `internal/ux/`: Shared terminal UX helpers for confirmations, plain output, badges, and symbols.
 - `internal/config/`: Config Loader and Writer (`~/.wpengine-cli.yaml`).
 
 ---

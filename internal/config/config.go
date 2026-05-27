@@ -20,8 +20,18 @@ type Config struct {
 
 const ConfigFileName = ".wpengine-cli.yaml"
 
+var configPathOverride string
+
+// SetConfigPath overrides the default config path for the current process.
+func SetConfigPath(path string) {
+	configPathOverride = path
+}
+
 // GetConfigPath returns the path to the configuration file.
 func GetConfigPath() (string, error) {
+	if configPathOverride != "" {
+		return configPathOverride, nil
+	}
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err

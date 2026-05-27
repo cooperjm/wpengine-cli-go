@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"wpengine-cli/internal/api"
 	"wpengine-cli/internal/config"
 	"wpengine-cli/internal/ui"
+	"wpengine-cli/internal/ux"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -34,6 +36,10 @@ var updateCmd = &cobra.Command{
 	Short: "Run backups and updates on one or more environments",
 	Long: `Triggers a backup checkpoint on the targeted environments, polls until the backup 
 completes, and then securely connects via SSH to run WordPress updates using WP-CLI.`,
+	Example: `  wpengine update my-dev-sandbox --plugins --dry-run
+  wpengine update my-production --all --email admin@example.com
+  wpengine update --batch target_envs.txt --themes --no-interactive --yes
+  wpengine update --all-envs --all --output json --yes`,
 	PreRunE: func(cmd *cobra.Command, args []string) error {
 		return RequireAPI()
 	},
@@ -122,9 +128,10 @@ func runUpdatesForEnvironments(targets []string, scope string, concurrency int, 
 		cachedInst, _ := config.ResolveFromCache(target)
 		if cachedInst != nil {
 			resolvedJobs = append(resolvedJobs, &ui.Job{
-				ID:     cachedInst.ID,
-				Name:   cachedInst.Name,
-				Status: "idle",
+				ID:      cachedInst.ID,
+				Name:    cachedInst.Name,
+				EnvType: cachedInst.Environment,
+				Status:  "idle",
 			})
 			continue
 		}
@@ -142,9 +149,10 @@ func runUpdatesForEnvironments(targets []string, scope string, concurrency int, 
 		for _, inst := range installs {
 			if strings.EqualFold(inst.Name, target) || strings.EqualFold(inst.ID, target) {
 				resolvedJobs = append(resolvedJobs, &ui.Job{
-					ID:     inst.ID,
-					Name:   inst.Name,
-					Status: "idle",
+					ID:      inst.ID,
+					Name:    inst.Name,
+					EnvType: inst.Environment,
+					Status:  "idle",
 				})
 				found = true
 				break
@@ -169,9 +177,13 @@ func runUpdatesForEnvironments(targets []string, scope string, concurrency int, 
 		concurrency = 10
 	}
 
+	if err := confirmUpdatePlan(resolvedJobs, scope, concurrency, email, dryRun); err != nil {
+		return err
+	}
+
 	// Run Execution Loop
 	// Select interactive TUI or static log mode
-	interactive := Cfg.Interactive && !NoInter
+	interactive := Cfg.Interactive && !NoInter && OutputFormat != "json" && !ux.Plain(PlainOutput)
 	if interactive {
 		m := ui.NewModel(resolvedJobs, APIClient, SSHClient, scope, dryRun, concurrency, email)
 		p := tea.NewProgram(m)
@@ -187,13 +199,101 @@ func runUpdatesForEnvironments(targets []string, scope string, concurrency int, 
 		updateCachedCheckResults(resolvedJobs, scope)
 	}
 
+	if OutputFormat == "json" {
+		if err := printUpdateResultsJSON(resolvedJobs, scope, concurrency, dryRun); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func confirmUpdatePlan(jobs []*ui.Job, scope string, concurrency int, email string, dryRun bool) error {
+	if dryRun || AssumeYes {
+		return nil
+	}
+
+	var productionCount, runnableCount int
+	for _, job := range jobs {
+		if job.Status == "failed" {
+			continue
+		}
+		runnableCount++
+		if strings.EqualFold(job.EnvType, "production") || strings.EqualFold(job.EnvType, "prod") {
+			productionCount++
+		}
+	}
+
+	if runnableCount == 0 {
+		return nil
+	}
+	if runnableCount == 1 && productionCount == 0 {
+		return nil
+	}
+
+	emailDesc := email
+	if emailDesc == "" {
+		emailDesc = "no-reply@wpengine.com"
+	}
+	fmt.Println()
+	fmt.Println(ux.Badge("REVIEW", lipgloss.Color("214"), PlainOutput) + " Update plan")
+	fmt.Printf("Targets: %d | Production: %d | Scope: %s | Concurrency: %d | Backup email: %s\n", runnableCount, productionCount, scope, concurrency, emailDesc)
+	fmt.Println("A backup checkpoint will be created before each update.")
+
+	ok, err := ux.Confirm("Proceed with this update plan?", AssumeYes)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("update cancelled")
+	}
+	return nil
+}
+
+func printUpdateResultsJSON(jobs []*ui.Job, scope string, concurrency int, dryRun bool) error {
+	type jobResult struct {
+		Name    string `json:"name"`
+		ID      string `json:"id,omitempty"`
+		EnvType string `json:"environment_type,omitempty"`
+		Status  string `json:"status"`
+		Details string `json:"details,omitempty"`
+		Error   string `json:"error,omitempty"`
+	}
+	payload := struct {
+		Scope       string      `json:"scope"`
+		Concurrency int         `json:"concurrency"`
+		DryRun      bool        `json:"dry_run"`
+		Results     []jobResult `json:"results"`
+	}{Scope: scope, Concurrency: concurrency, DryRun: dryRun}
+
+	for _, job := range jobs {
+		result := jobResult{
+			Name:    job.Name,
+			ID:      job.ID,
+			EnvType: job.EnvType,
+			Status:  job.Status,
+			Details: strings.TrimSpace(job.Details),
+		}
+		if job.Error != nil {
+			result.Error = job.Error.Error()
+		}
+		payload.Results = append(payload.Results, result)
+	}
+
+	data, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return err
+	}
+	fmt.Println(string(data))
 	return nil
 }
 
 // runNonInteractive executes the updates using clean Lipgloss-styled print statements (useful for scripting/CI).
 func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
-	fmt.Println("\n" + ui.GetStatusBadge("updating") + " Starting Batch Updates (Non-Interactive Mode)")
-	fmt.Printf("Targets: %d | Concurrency: %d | Scope: %s\n\n", len(jobs), concurrency, scope)
+	if OutputFormat != "json" {
+		fmt.Println("\n" + ui.GetStatusBadge("updating") + " Starting Batch Updates (Non-Interactive Mode)")
+		fmt.Printf("Targets: %d | Concurrency: %d | Scope: %s\n\n", len(jobs), concurrency, scope)
+	}
 
 	jobChan := make(chan int, len(jobs))
 	for i := range jobs {
@@ -204,6 +304,14 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, concurrency)
 	var logMu sync.Mutex
+	printLog := func(badge, name, message string, color lipgloss.Color) {
+		if OutputFormat == "json" {
+			return
+		}
+		logMu.Lock()
+		defer logMu.Unlock()
+		ui.PrintLog(badge, name, message, color)
+	}
 
 	for i := 0; i < concurrency; i++ {
 		wg.Add(1)
@@ -214,22 +322,16 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 
 				job := jobs[idx]
 				if job.Status == "failed" {
-					logMu.Lock()
-					ui.PrintLog("FAILED", job.Name, job.Error.Error(), lipgloss.Color("196"))
-					logMu.Unlock()
+					printLog("FAILED", job.Name, job.Error.Error(), lipgloss.Color("196"))
 					<-sem
 					continue
 				}
 
 				// SSH Verify
-				logMu.Lock()
-				ui.PrintLog("VERIFY", job.Name, "Testing SSH gateway connection...", lipgloss.Color("39"))
-				logMu.Unlock()
+				printLog("VERIFY", job.Name, "Testing SSH gateway connection...", lipgloss.Color("39"))
 				err := SSHClient.VerifyConnection(job.Name)
 				if err != nil {
-					logMu.Lock()
-					ui.PrintLog("FAILED", job.Name, fmt.Sprintf("SSH connection failed: %v", err), lipgloss.Color("196"))
-					logMu.Unlock()
+					printLog("FAILED", job.Name, fmt.Sprintf("SSH connection failed: %v", err), lipgloss.Color("196"))
 					job.Status = "failed"
 					job.Error = err
 					<-sem
@@ -237,9 +339,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 				}
 
 				// Trigger Backup
-				logMu.Lock()
-				ui.PrintLog("BACKUP", job.Name, "Creating backup checkpoint...", lipgloss.Color("214"))
-				logMu.Unlock()
+				printLog("BACKUP", job.Name, "Creating backup checkpoint...", lipgloss.Color("214"))
 
 				backupDesc := fmt.Sprintf("cli-pre-update-%d", time.Now().Unix())
 				var emails []string
@@ -248,9 +348,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 				}
 				backup, err := APIClient.CreateBackup(job.ID, backupDesc, emails)
 				if err != nil {
-					logMu.Lock()
-					ui.PrintLog("FAILED", job.Name, fmt.Sprintf("Backup failed: %v", err), lipgloss.Color("196"))
-					logMu.Unlock()
+					printLog("FAILED", job.Name, fmt.Sprintf("Backup failed: %v", err), lipgloss.Color("196"))
 					job.Status = "failed"
 					job.Error = err
 					<-sem
@@ -267,14 +365,10 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 						if !ok {
 							break pollLoop
 						}
-						logMu.Lock()
-						ui.PrintLog("BACKUP", job.Name, fmt.Sprintf("Polling status: %s", b.Status), lipgloss.Color("214"))
-						logMu.Unlock()
+						printLog("BACKUP", job.Name, fmt.Sprintf("Polling status: %s", b.Status), lipgloss.Color("214"))
 					case err := <-errChan:
 						if err != nil {
-							logMu.Lock()
-							ui.PrintLog("FAILED", job.Name, fmt.Sprintf("Backup polling failed: %v", err), lipgloss.Color("196"))
-							logMu.Unlock()
+							printLog("FAILED", job.Name, fmt.Sprintf("Backup polling failed: %v", err), lipgloss.Color("196"))
 							job.Status = "failed"
 							job.Error = err
 							backupSuccess = false
@@ -289,9 +383,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 				}
 
 				// Execute SSH WP-CLI
-				logMu.Lock()
-				ui.PrintLog("UPDATE", job.Name, "Running updates via WP-CLI...", lipgloss.Color("99"))
-				logMu.Unlock()
+				printLog("UPDATE", job.Name, "Running updates via WP-CLI...", lipgloss.Color("99"))
 
 				wpArgs := []string{"plugin", "update"}
 				if updateDryRun {
@@ -326,9 +418,8 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 					stdout, stderr, err = SSHClient.RunWPCLI(job.Name, wpArgs...)
 				}
 
-				logMu.Lock()
 				if err != nil {
-					ui.PrintLog("FAILED", job.Name, fmt.Sprintf("Update failed: %v (stderr: %s)", err, stderr), lipgloss.Color("196"))
+					printLog("FAILED", job.Name, fmt.Sprintf("Update failed: %v (stderr: %s)", err, stderr), lipgloss.Color("196"))
 					job.Status = "failed"
 					job.Error = err
 				} else {
@@ -339,10 +430,10 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 						lines := strings.Split(summary, "\n")
 						summary = lines[len(lines)-1] // Show last line for brevity
 					}
-					ui.PrintLog("SUCCESS", job.Name, summary, lipgloss.Color("46"))
+					printLog("SUCCESS", job.Name, summary, lipgloss.Color("46"))
 					job.Status = "completed"
+					job.Details = summary
 				}
-				logMu.Unlock()
 
 				<-sem
 			}
@@ -350,7 +441,9 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 	}
 
 	wg.Wait()
-	fmt.Println("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render("✔ All operations completed.") + "\n")
+	if OutputFormat != "json" {
+		fmt.Println("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render(ux.Symbol("check", PlainOutput)+" All operations completed.") + "\n")
+	}
 }
 
 func init() {
