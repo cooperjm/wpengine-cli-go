@@ -58,11 +58,35 @@ var doctorCmd = &cobra.Command{
 		}
 		fmt.Println()
 
+		passed, warned, failed := doctorCounts(checks)
+		if PlainOutput {
+			fmt.Printf("%d passed · %d warnings · %d failures\n\n", passed, warned, failed)
+		} else {
+			passedStr := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render(fmt.Sprintf("%d passed", passed))
+			warnStr := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render(fmt.Sprintf("%d warnings", warned))
+			failStr := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render(fmt.Sprintf("%d failures", failed))
+			fmt.Printf("%s · %s · %s\n\n", passedStr, warnStr, failStr)
+		}
+
 		if doctorHasFailure(checks) {
 			return fmt.Errorf("doctor found setup problems")
 		}
 		return nil
 	},
+}
+
+func doctorCounts(checks []doctorCheck) (passed, warned, failed int) {
+	for _, c := range checks {
+		switch c.Status {
+		case "ok":
+			passed++
+		case "warn":
+			warned++
+		case "fail":
+			failed++
+		}
+	}
+	return
 }
 
 func doctorHasFailure(checks []doctorCheck) bool {
