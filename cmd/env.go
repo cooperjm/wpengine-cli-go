@@ -3,9 +3,11 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sort"
 
 	"wpengine-cli/internal/api"
 	"wpengine-cli/internal/config"
+	"wpengine-cli/internal/ui"
 	"wpengine-cli/internal/ux"
 
 	"github.com/charmbracelet/lipgloss"
@@ -38,8 +40,12 @@ var envListCmd = &cobra.Command{
 		return RequireAPI()
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		installs, err := APIClient.GetAllInstalls()
-		if err != nil {
+		var installs []api.Install
+		if err := ui.RunWithSpinner("Fetching environments...", PlainOutput, func() error {
+			var e error
+			installs, e = APIClient.GetAllInstalls()
+			return e
+		}); err != nil {
 			return fmt.Errorf("failed to fetch environments: %w", err)
 		}
 
@@ -74,6 +80,10 @@ var envListCmd = &cobra.Command{
 			}
 			filteredInstalls = append(filteredInstalls, inst)
 		}
+
+		sort.SliceStable(filteredInstalls, func(i, j int) bool {
+			return filteredInstalls[i].Site.ID < filteredInstalls[j].Site.ID
+		})
 
 		if len(filteredInstalls) == 0 {
 			if envListNames {
