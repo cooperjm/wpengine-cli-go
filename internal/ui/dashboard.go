@@ -79,12 +79,13 @@ func PrintLog(badge, name, message string, color lipgloss.Color) {
 
 // Job represents a single site update task.
 type Job struct {
-	ID      string
-	Name    string
-	EnvType string
-	Status  string // idle, verifying_ssh, backing_up, polling_backup, updating, completed, failed
-	Details string
-	Error   error
+	ID        string
+	Name      string
+	EnvType   string
+	Status    string // idle, verifying_ssh, backing_up, polling_backup, updating, completed, failed
+	Details   string
+	Error     error
+	StartedAt time.Time // zero when idle
 }
 
 // Bubble Tea Model for Interactive Dashboard
@@ -102,6 +103,7 @@ type Model struct {
 	quitting    bool
 	wg          sync.WaitGroup
 	mu          sync.Mutex
+	startedAt   time.Time
 }
 
 // JobUpdateMsg is sent when a job's status updates.
@@ -136,6 +138,7 @@ func NewModel(jobs []*Job, client *api.Client, sshClient *ssh.Client, scope stri
 
 // Init initializes the Bubble Tea program.
 func (m *Model) Init() tea.Cmd {
+	m.startedAt = time.Now()
 	// Start workers in background
 	m.startWorkers()
 
@@ -193,8 +196,10 @@ func (m *Model) View() string {
 	var sb strings.Builder
 
 	// Title Banner
+	elapsed := time.Since(m.startedAt)
+	elapsedStr := fmt.Sprintf("%dm %02ds", int(elapsed.Minutes()), int(elapsed.Seconds())%60)
 	sb.WriteString("\n")
-	sb.WriteString(titleStyle.Render(" WP Engine Site Update Dashboard "))
+	sb.WriteString(titleStyle.Render(fmt.Sprintf(" WP Engine Update Dashboard   Elapsed: %s ", elapsedStr)))
 	sb.WriteString("\n\n")
 
 	// Calculate counts
@@ -283,6 +288,7 @@ func (m *Model) View() string {
 		details := job.Details
 		err := job.Error
 		name := job.Name
+		startedAt := job.StartedAt
 		m.mu.Unlock()
 
 		badge := GetStatusBadge(status)
@@ -299,7 +305,14 @@ func (m *Model) View() string {
 			spinStr = m.spinner.View() + " "
 		}
 
-		sb.WriteString(fmt.Sprintf("%s %s %s\n", spinStr, badge, boldStyle.Render(name)))
+		var durationStr string
+		if !startedAt.IsZero() {
+			d := time.Since(startedAt)
+			durationStr = lipgloss.NewStyle().Foreground(MutedColor).Render(
+				fmt.Sprintf(" (%dm %02ds)", int(d.Minutes()), int(d.Seconds())%60),
+			)
+		}
+		sb.WriteString(fmt.Sprintf("%s %s %s%s\n", spinStr, badge, boldStyle.Render(name), durationStr))
 		if statusText != "" {
 			sb.WriteString(fmt.Sprintf("     └─ %s\n", statusText))
 		}
@@ -361,6 +374,10 @@ func (m *Model) runJob(idx int) {
 		m.msgChan <- JobUpdateMsg{Index: idx, Status: "failed", Err: job.Error}
 		return
 	}
+
+	m.mu.Lock()
+	job.StartedAt = time.Now()
+	m.mu.Unlock()
 
 	// 1. Verify SSH Connection
 	m.msgChan <- JobUpdateMsg{Index: idx, Status: "verifying_ssh", Details: "Testing SSH Gateway connection..."}
