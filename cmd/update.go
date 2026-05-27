@@ -16,6 +16,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
 )
 
@@ -236,7 +237,7 @@ func confirmUpdatePlan(jobs []*ui.Job, scope string, concurrency int, email stri
 		emailDesc = "no-reply@wpengine.com"
 	}
 	fmt.Println()
-	fmt.Println(ux.Badge("REVIEW", lipgloss.Color("214"), PlainOutput) + " Update plan")
+	fmt.Println(ux.Badge("REVIEW", ui.WarningColor, PlainOutput) + " Update plan")
 	fmt.Printf("Targets: %d | Production: %d | Scope: %s | Concurrency: %d | Backup email: %s\n", runnableCount, productionCount, scope, concurrency, emailDesc)
 	fmt.Println("A backup checkpoint will be created before each update.")
 
@@ -322,16 +323,16 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 
 				job := jobs[idx]
 				if job.Status == "failed" {
-					printLog("FAILED", job.Name, job.Error.Error(), lipgloss.Color("196"))
+					printLog("FAILED", job.Name, job.Error.Error(), ui.ErrorColor)
 					<-sem
 					continue
 				}
 
 				// SSH Verify
-				printLog("VERIFY", job.Name, "Testing SSH gateway connection...", lipgloss.Color("39"))
+				printLog("VERIFY", job.Name, "Testing SSH gateway connection...", ui.InfoColor)
 				err := SSHClient.VerifyConnection(job.Name)
 				if err != nil {
-					printLog("FAILED", job.Name, fmt.Sprintf("SSH connection failed: %v", err), lipgloss.Color("196"))
+					printLog("FAILED", job.Name, fmt.Sprintf("SSH connection failed: %v", err), ui.ErrorColor)
 					job.Status = "failed"
 					job.Error = err
 					<-sem
@@ -339,7 +340,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 				}
 
 				// Trigger Backup
-				printLog("BACKUP", job.Name, "Creating backup checkpoint...", lipgloss.Color("214"))
+				printLog("BACKUP", job.Name, "Creating backup checkpoint...", ui.WarningColor)
 
 				backupDesc := fmt.Sprintf("cli-pre-update-%d", time.Now().Unix())
 				var emails []string
@@ -348,7 +349,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 				}
 				backup, err := APIClient.CreateBackup(job.ID, backupDesc, emails)
 				if err != nil {
-					printLog("FAILED", job.Name, fmt.Sprintf("Backup failed: %v", err), lipgloss.Color("196"))
+					printLog("FAILED", job.Name, fmt.Sprintf("Backup failed: %v", err), ui.ErrorColor)
 					job.Status = "failed"
 					job.Error = err
 					<-sem
@@ -365,10 +366,10 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 						if !ok {
 							break pollLoop
 						}
-						printLog("BACKUP", job.Name, fmt.Sprintf("Polling status: %s", b.Status), lipgloss.Color("214"))
+						printLog("BACKUP", job.Name, fmt.Sprintf("Polling status: %s", b.Status), ui.WarningColor)
 					case err := <-errChan:
 						if err != nil {
-							printLog("FAILED", job.Name, fmt.Sprintf("Backup polling failed: %v", err), lipgloss.Color("196"))
+							printLog("FAILED", job.Name, fmt.Sprintf("Backup polling failed: %v", err), ui.ErrorColor)
 							job.Status = "failed"
 							job.Error = err
 							backupSuccess = false
@@ -383,7 +384,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 				}
 
 				// Execute SSH WP-CLI
-				printLog("UPDATE", job.Name, "Running updates via WP-CLI...", lipgloss.Color("99"))
+				printLog("UPDATE", job.Name, "Running updates via WP-CLI...", ui.PrimaryColor)
 
 				wpArgs := []string{"plugin", "update"}
 				if updateDryRun {
@@ -419,7 +420,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 				}
 
 				if err != nil {
-					printLog("FAILED", job.Name, fmt.Sprintf("Update failed: %v (stderr: %s)", err, stderr), lipgloss.Color("196"))
+					printLog("FAILED", job.Name, fmt.Sprintf("Update failed: %v (stderr: %s)", err, stderr), ui.ErrorColor)
 					job.Status = "failed"
 					job.Error = err
 				} else {
@@ -430,7 +431,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 						lines := strings.Split(summary, "\n")
 						summary = lines[len(lines)-1] // Show last line for brevity
 					}
-					printLog("SUCCESS", job.Name, summary, lipgloss.Color("46"))
+					printLog("SUCCESS", job.Name, summary, ui.SuccessColor)
 					job.Status = "completed"
 					job.Details = summary
 				}
@@ -442,8 +443,58 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 
 	wg.Wait()
 	if OutputFormat != "json" {
-		fmt.Println("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render(ux.Symbol("check", PlainOutput)+" All operations completed.") + "\n")
+		fmt.Println()
+		renderUpdateSummaryTable(jobs)
+		fmt.Println(lipgloss.NewStyle().Foreground(ui.SuccessColor).Bold(true).Render(ux.Symbol("check", PlainOutput)+" All operations completed.") + "\n")
 	}
+}
+
+func renderUpdateSummaryTable(jobs []*ui.Job) {
+	t := table.New().
+		Border(lipgloss.RoundedBorder()).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.PrimaryColor)).
+		Headers("Environment", "Type", "Status", "Details")
+
+	t.StyleFunc(func(row, col int) lipgloss.Style {
+		if row == table.HeaderRow {
+			return lipgloss.NewStyle().
+				Foreground(lipgloss.Color("255")).
+				Background(ui.PrimaryColor).
+				Bold(true).
+				Padding(0, 1)
+		}
+		return lipgloss.NewStyle().Padding(0, 1)
+	})
+
+	for _, job := range jobs {
+		statusStr := lipgloss.NewStyle().Foreground(ui.SuccessColor).Bold(true).Render("SUCCESS")
+		if job.Status == "failed" {
+			statusStr = lipgloss.NewStyle().Foreground(ui.ErrorColor).Bold(true).Render("FAILED")
+		}
+
+		details := job.Details
+		if job.Error != nil {
+			details = job.Error.Error()
+		}
+		if len(details) > 60 {
+			details = details[:57] + "..."
+		}
+
+		envType := shortEnvType(job.EnvType)
+		var typeStr string
+		switch envType {
+		case "prod":
+			typeStr = lipgloss.NewStyle().Foreground(ui.ErrorColor).Bold(true).Render("PROD")
+		case "stg":
+			typeStr = lipgloss.NewStyle().Foreground(ui.WarningColor).Bold(true).Render("STG")
+		default:
+			typeStr = lipgloss.NewStyle().Foreground(ui.InfoColor).Bold(true).Render("DEV")
+		}
+
+		t.Row(job.Name, typeStr, statusStr, details)
+	}
+
+	fmt.Println(t.Render())
 }
 
 func init() {
