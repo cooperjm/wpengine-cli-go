@@ -23,6 +23,7 @@ var (
 	envListProd bool
 	envListStg  bool
 	envListDev  bool
+	envListNames bool
 )
 
 var envCmd = &cobra.Command{
@@ -75,7 +76,17 @@ var envListCmd = &cobra.Command{
 		}
 
 		if len(filteredInstalls) == 0 {
+			if envListNames {
+				return nil
+			}
 			fmt.Println("\nNo environments matching the filters were found.")
+			return nil
+		}
+
+		if envListNames {
+			for _, inst := range filteredInstalls {
+				fmt.Println(inst.Name)
+			}
 			return nil
 		}
 
@@ -233,6 +244,7 @@ func init() {
 	envListCmd.Flags().BoolVarP(&envListProd, "production", "p", false, "Filter to only production environments")
 	envListCmd.Flags().BoolVarP(&envListStg, "staging", "s", false, "Filter to only staging environments")
 	envListCmd.Flags().BoolVarP(&envListDev, "dev", "d", false, "Filter to only development environments")
+	envListCmd.Flags().BoolVar(&envListNames, "names", false, "Print only environment names (one per line) for batch files")
 
 	envCmd.AddCommand(envListCmd)
 	envCmd.AddCommand(envCreateCmd)

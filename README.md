@@ -159,6 +159,14 @@ You can also filter the environments by type using flags:
 * `-s, --staging`: Filter to only staging environments.
 * `-d, --dev`: Filter to only development environments.
 
+**Batch-friendly Raw List Output**
+Use the `--names` flag to output only the raw environment names (one per line), bypassing the styled table and other UI output. This is useful for quickly generating batch list files for updates:
+```bash
+./wpengine env list --names > target_envs.txt
+# Or generate a batch file containing only production targets
+./wpengine env list --production --names > prod_envs.txt
+```
+
 Example:
 ```bash
 ./wpengine env list --production
