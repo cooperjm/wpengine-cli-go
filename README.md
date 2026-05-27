@@ -173,7 +173,7 @@ Example:
 ```
 
 ### 3. View Sites
-List all top-level sites under your account (including a column displaying their associated environments):
+List all top-level sites under your account in a grouped tree layout. Each site is shown as a header with its environments indented beneath it, displaying PROD/STG/DEV badges, the primary domain, and status. A footer summarises the total site and environment counts:
 ```bash
 ./wpengine site list
 ```
@@ -212,13 +212,13 @@ Check updates across all active environments concurrently:
 ./wpengine check --all-envs
 ```
 
-**Minimal Output Flag**
-To minimize verbose output and display a summary table of the environments' update status:
+**Summary Table (default)**
+By default, `check` displays a compact summary table showing each environment's update status. To see the full per-environment box layout with detailed output, use `--verbose`:
 ```bash
-./wpengine check --all-envs --minimal
-# or
-./wpengine check --all-envs -m
+./wpengine check --all-envs --verbose
 ```
+
+> **Note:** The `--minimal` flag is a deprecated alias for the default summary mode and will be removed in a future release.
 
 **JSON Output**
 For CI or reporting workflows, return structured results:
@@ -273,7 +273,7 @@ For machine-readable update results:
 - `cmd/`: Command definitions using Cobra (`root`, `config`, `doctor`, `env`, `site`, `check`, `update`).
 - `internal/api/`: WP Engine API client implementation & models.
 - `internal/ssh/`: SSH client connecting to WP Engine Gateway to run `wp-cli`.
-- `internal/ui/`: Bubble Tea and Lipgloss CLI components.
+- `internal/ui/`: Bubble Tea and Lipgloss CLI components, including `styles.go` (shared color palette used across commands) and `spinner.go` (loading spinner used by site, env, and check commands).
 - `internal/ux/`: Shared terminal UX helpers for confirmations, plain output, badges, and symbols.
 - `internal/config/`: Config Loader and Writer (`~/.wpengine-cli.yaml`).
 
