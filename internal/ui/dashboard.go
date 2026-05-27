@@ -15,18 +15,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// UI Color Palette and Lipgloss Styles
+// Lipgloss Styles
 var (
-	primaryColor = lipgloss.Color("99")  // Deep Indigo/Purple
-	successColor = lipgloss.Color("46")  // Emerald Green
-	warningColor = lipgloss.Color("214") // Amber/Yellow
-	errorColor   = lipgloss.Color("196") // Rose/Red
-	infoColor    = lipgloss.Color("39")  // Sky Blue
-	mutedColor   = lipgloss.Color("244") // Slate Gray
-
 	// Style Definitions
 	titleStyle = lipgloss.NewStyle().
-			Background(primaryColor).
+			Background(PrimaryColor).
 			Foreground(lipgloss.Color("230")).
 			Padding(0, 1).
 			Bold(true)
@@ -35,12 +28,12 @@ var (
 
 	boxStyle = lipgloss.NewStyle().
 			Border(lipgloss.RoundedBorder()).
-			BorderForeground(primaryColor).
+			BorderForeground(PrimaryColor).
 			Padding(1, 2).
 			Margin(1, 0)
 
 	bannerStyle = lipgloss.NewStyle().
-			Foreground(primaryColor).
+			Foreground(PrimaryColor).
 			Bold(true).
 			Padding(0, 1)
 
@@ -55,21 +48,21 @@ func SetPlainOutput(plain bool) {
 func GetStatusBadge(status string) string {
 	switch status {
 	case "idle":
-		return ux.Badge("PENDING", mutedColor, plainOutput)
+		return ux.Badge("PENDING", MutedColor, plainOutput)
 	case "verifying_ssh":
-		return ux.Badge("VERIFY SSH", infoColor, plainOutput)
+		return ux.Badge("VERIFY SSH", InfoColor, plainOutput)
 	case "backing_up":
-		return ux.Badge("BACKUP INITIATED", warningColor, plainOutput)
+		return ux.Badge("BACKUP INITIATED", WarningColor, plainOutput)
 	case "polling_backup":
-		return ux.Badge("BACKING UP", warningColor, plainOutput)
+		return ux.Badge("BACKING UP", WarningColor, plainOutput)
 	case "updating":
-		return ux.Badge("UPDATING", primaryColor, plainOutput)
+		return ux.Badge("UPDATING", PrimaryColor, plainOutput)
 	case "completed":
-		return ux.Badge("SUCCESS", successColor, plainOutput)
+		return ux.Badge("SUCCESS", SuccessColor, plainOutput)
 	case "failed":
-		return ux.Badge("FAILED", errorColor, plainOutput)
+		return ux.Badge("FAILED", ErrorColor, plainOutput)
 	default:
-		return ux.Badge(strings.ToUpper(status), mutedColor, plainOutput)
+		return ux.Badge(strings.ToUpper(status), MutedColor, plainOutput)
 	}
 }
 
@@ -80,7 +73,7 @@ func PrintLog(badge, name, message string, color lipgloss.Color) {
 		return
 	}
 	badgeStyle := lipgloss.NewStyle().Background(color).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1)
-	nameStyle := lipgloss.NewStyle().Foreground(primaryColor).Bold(true)
+	nameStyle := lipgloss.NewStyle().Foreground(PrimaryColor).Bold(true)
 	fmt.Printf("%s %s: %s\n", badgeStyle.Render(badge), nameStyle.Render(name), message)
 }
 
@@ -126,7 +119,7 @@ type FinishedMsg struct{}
 func NewModel(jobs []*Job, client *api.Client, sshClient *ssh.Client, scope string, dryRun bool, concurrency int, email string) *Model {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(primaryColor)
+	s.Style = lipgloss.NewStyle().Foreground(PrimaryColor)
 
 	return &Model{
 		Jobs:        jobs,
@@ -223,10 +216,10 @@ func (m *Model) View() string {
 	}
 
 	// Render summary line
-	pendingBadge := lipgloss.NewStyle().Foreground(mutedColor).Bold(true).Render(fmt.Sprintf("● Pending: %d", pendingCount))
-	activeBadge := lipgloss.NewStyle().Foreground(infoColor).Bold(true).Render(fmt.Sprintf("▶ Active: %d", activeCount))
-	completedBadge := lipgloss.NewStyle().Foreground(successColor).Bold(true).Render(fmt.Sprintf("✔ Completed: %d", completedCount))
-	failedBadge := lipgloss.NewStyle().Foreground(errorColor).Bold(true).Render(fmt.Sprintf("✖ Failed: %d", failedCount))
+	pendingBadge := lipgloss.NewStyle().Foreground(MutedColor).Bold(true).Render(fmt.Sprintf("● Pending: %d", pendingCount))
+	activeBadge := lipgloss.NewStyle().Foreground(InfoColor).Bold(true).Render(fmt.Sprintf("▶ Active: %d", activeCount))
+	completedBadge := lipgloss.NewStyle().Foreground(SuccessColor).Bold(true).Render(fmt.Sprintf("✔ Completed: %d", completedCount))
+	failedBadge := lipgloss.NewStyle().Foreground(ErrorColor).Bold(true).Render(fmt.Sprintf("✖ Failed: %d", failedCount))
 
 	sb.WriteString(fmt.Sprintf("%s  |  %s  |  %s  |  %s\n\n", pendingBadge, activeBadge, completedBadge, failedBadge))
 
@@ -244,8 +237,8 @@ func (m *Model) View() string {
 		filledWidth = barWidth
 	}
 
-	filledBar := lipgloss.NewStyle().Foreground(successColor).Render(strings.Repeat("█", filledWidth))
-	emptyBar := lipgloss.NewStyle().Foreground(mutedColor).Render(strings.Repeat("░", barWidth-filledWidth))
+	filledBar := lipgloss.NewStyle().Foreground(SuccessColor).Render(strings.Repeat("█", filledWidth))
+	emptyBar := lipgloss.NewStyle().Foreground(MutedColor).Render(strings.Repeat("░", barWidth-filledWidth))
 	sb.WriteString(fmt.Sprintf("Progress: [%s%s] %d%% (%d/%d)\n\n", filledBar, emptyBar, int(percent*100), finishedJobs, totalJobs))
 
 	// Find focus index (first running or pending job)
@@ -280,7 +273,7 @@ func (m *Model) View() string {
 	}
 
 	if start > 0 {
-		sb.WriteString(lipgloss.NewStyle().Foreground(mutedColor).Render(fmt.Sprintf("  ▲ ... %d jobs completed above ...", start)) + "\n\n")
+		sb.WriteString(lipgloss.NewStyle().Foreground(MutedColor).Render(fmt.Sprintf("  ▲ ... %d jobs completed above ...", start)) + "\n\n")
 	}
 
 	for i := start; i < end; i++ {
@@ -296,9 +289,9 @@ func (m *Model) View() string {
 
 		var statusText string
 		if status == "failed" && err != nil {
-			statusText = lipgloss.NewStyle().Foreground(errorColor).Render(err.Error())
+			statusText = lipgloss.NewStyle().Foreground(ErrorColor).Render(err.Error())
 		} else {
-			statusText = lipgloss.NewStyle().Foreground(mutedColor).Render(details)
+			statusText = lipgloss.NewStyle().Foreground(MutedColor).Render(details)
 		}
 
 		spinStr := "  "
@@ -316,13 +309,13 @@ func (m *Model) View() string {
 	}
 
 	if end < len(m.Jobs) {
-		sb.WriteString("\n" + lipgloss.NewStyle().Foreground(mutedColor).Render(fmt.Sprintf("  ▼ ... %d jobs pending below ...", len(m.Jobs)-end)) + "\n")
+		sb.WriteString("\n" + lipgloss.NewStyle().Foreground(MutedColor).Render(fmt.Sprintf("  ▼ ... %d jobs pending below ...", len(m.Jobs)-end)) + "\n")
 	}
 
 	if m.done {
-		sb.WriteString("\n" + lipgloss.NewStyle().Foreground(successColor).Bold(true).Render("✔ All operations completed.") + "\n")
+		sb.WriteString("\n" + lipgloss.NewStyle().Foreground(SuccessColor).Bold(true).Render("✔ All operations completed.") + "\n")
 	} else if m.quitting {
-		sb.WriteString("\n" + lipgloss.NewStyle().Foreground(errorColor).Bold(true).Render("✖ Terminated by user.") + "\n")
+		sb.WriteString("\n" + lipgloss.NewStyle().Foreground(ErrorColor).Bold(true).Render("✖ Terminated by user.") + "\n")
 	} else {
 		sb.WriteString("\nPress 'q' or Ctrl+C to quit.\n")
 	}
