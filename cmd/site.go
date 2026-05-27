@@ -2,26 +2,20 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"wpengine-cli/internal/api"
 	"wpengine-cli/internal/config"
+	"wpengine-cli/internal/ui"
 
 	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 )
 
 var (
 	siteListProd bool
 	siteListStg  bool
 	siteListDev  bool
-
-	prodStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("160")).Bold(true)
-	stgStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
-	devStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true)
 )
 
 var siteCmd = &cobra.Command{
@@ -36,8 +30,12 @@ var siteListCmd = &cobra.Command{
 		return RequireAPI()
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
-		sites, err := APIClient.GetAllSites()
-		if err != nil {
+		var sites []api.Site
+		if err := ui.RunWithSpinner("Fetching sites...", PlainOutput, func() error {
+			var e error
+			sites, e = APIClient.GetAllSites()
+			return e
+		}); err != nil {
 			return fmt.Errorf("failed to fetch sites: %w", err)
 		}
 
@@ -46,9 +44,12 @@ var siteListCmd = &cobra.Command{
 			return nil
 		}
 
-		// Fetch installs (environments) to associate with sites
-		installs, err := APIClient.GetAllInstalls()
-		if err != nil {
+		var installs []api.Install
+		if err := ui.RunWithSpinner("Fetching environments...", PlainOutput, func() error {
+			var e error
+			installs, e = APIClient.GetAllInstalls()
+			return e
+		}); err != nil {
 			return fmt.Errorf("failed to fetch environments: %w", err)
 		}
 
@@ -100,66 +101,7 @@ var siteListCmd = &cobra.Command{
 			return nil
 		}
 
-		fmt.Println("\n" + PrimaryStyle.Render("WP Engine Sites") + "\n")
-
-		// Detect terminal width
-		width, _, err := term.GetSize(int(os.Stdout.Fd()))
-		if err != nil || width <= 0 {
-			width = 120
-		}
-		if width > 140 {
-			width = 140
-		}
-
-		// Create a Lipgloss table
-		t := table.New().
-			Border(lipgloss.RoundedBorder()).
-			BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("99"))).
-			Headers("ID", "Name", "Environments", "Associated Account ID").
-			Width(width).
-			Wrap(true)
-
-		t.StyleFunc(func(row, col int) lipgloss.Style {
-			if row == table.HeaderRow {
-				return lipgloss.NewStyle().
-					Foreground(lipgloss.Color("255")).
-					Background(lipgloss.Color("99")).
-					Bold(true).
-					Padding(0, 1)
-			}
-			return lipgloss.NewStyle().Padding(0, 1)
-		})
-
-		for _, site := range filteredSites {
-			insts := siteInstalls[site.ID]
-
-			// Format environments string
-			var envStrings []string
-			for _, inst := range insts {
-				var formatted string
-				switch inst.Environment {
-				case "production":
-					formatted = prodStyle.Render("prod") + fmt.Sprintf(" (%s)", inst.Name)
-				case "staging":
-					formatted = stgStyle.Render("stage") + fmt.Sprintf(" (%s)", inst.Name)
-				case "development":
-					formatted = devStyle.Render("dev") + fmt.Sprintf(" (%s)", inst.Name)
-				default:
-					formatted = inst.Environment + fmt.Sprintf(" (%s)", inst.Name)
-				}
-				envStrings = append(envStrings, formatted)
-			}
-
-			envListStr := "-"
-			if len(envStrings) > 0 {
-				envListStr = strings.Join(envStrings, ", ")
-			}
-
-			t.Row(site.ID, site.Name, envListStr, site.Account.ID)
-		}
-
-		fmt.Println(t.Render())
-		fmt.Printf("\nTotal sites found: %d\n\n", len(filteredSites))
+		renderSiteTree(filteredSites, siteInstalls, PrimaryStyle)
 		return nil
 	},
 }
@@ -171,4 +113,74 @@ func init() {
 
 	siteCmd.AddCommand(siteListCmd)
 	RootCmd.AddCommand(siteCmd)
+}
+
+func renderSiteTree(sites []api.Site, siteInstalls map[string][]api.Install, primaryStyle lipgloss.Style) {
+	siteHeaderStyle := lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
+	siteIDStyle := lipgloss.NewStyle().Foreground(ui.MutedColor)
+	domainStyle := lipgloss.NewStyle().Foreground(ui.MutedColor)
+	activeStyle := lipgloss.NewStyle().Foreground(ui.SuccessColor)
+	inactiveStyle := lipgloss.NewStyle().Foreground(ui.MutedColor)
+	divider := lipgloss.NewStyle().Foreground(lipgloss.Color("237")).Render(strings.Repeat("─", 60))
+
+	totalEnvs := 0
+	for _, site := range sites {
+		totalEnvs += len(siteInstalls[site.ID])
+	}
+
+	fmt.Println()
+	fmt.Println(primaryStyle.Render("WP Engine Sites"))
+	fmt.Println()
+
+	for i, site := range sites {
+		if i > 0 {
+			fmt.Println(divider)
+		}
+		fmt.Printf("%s %s  %s\n",
+			siteHeaderStyle.Render("⬡"),
+			siteHeaderStyle.Render(site.Name),
+			siteIDStyle.Render(site.ID),
+		)
+
+		for _, inst := range siteInstalls[site.ID] {
+			badge := siteEnvBadge(inst.Environment)
+			statusStr := activeStyle.Render("● active")
+			if inst.Status != "active" {
+				statusStr = inactiveStyle.Render("○ " + inst.Status)
+			}
+			domain := inst.PrimaryDomain
+			if domain == "" {
+				domain = inst.CNAME
+			}
+			fmt.Printf("   %s  %-30s  %-40s  %s\n",
+				badge,
+				inst.Name,
+				domainStyle.Render(domain),
+				statusStr,
+			)
+		}
+	}
+
+	fmt.Printf("\n%s\n\n",
+		lipgloss.NewStyle().Foreground(ui.MutedColor).Render(
+			fmt.Sprintf("%d sites · %d environments", len(sites), totalEnvs),
+		),
+	)
+}
+
+func siteEnvBadge(environment string) string {
+	switch environment {
+	case "production":
+		return lipgloss.NewStyle().Background(lipgloss.Color("88")).Foreground(lipgloss.Color("217")).Bold(true).Padding(0, 1).Render("PROD")
+	case "staging":
+		return lipgloss.NewStyle().Background(lipgloss.Color("94")).Foreground(lipgloss.Color("229")).Bold(true).Padding(0, 1).Render(" STG")
+	case "development":
+		return lipgloss.NewStyle().Background(lipgloss.Color("17")).Foreground(lipgloss.Color("117")).Bold(true).Padding(0, 1).Render(" DEV")
+	default:
+		label := environment
+		if len(label) > 3 {
+			label = label[:3]
+		}
+		return lipgloss.NewStyle().Background(ui.MutedColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(strings.ToUpper(label))
+	}
 }
