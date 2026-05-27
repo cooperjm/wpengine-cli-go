@@ -31,6 +31,7 @@ var (
 	checkBatch      string
 	checkConcurrent int
 	checkMinimal    bool
+	checkVerbose    bool // new
 )
 
 // JSON structures for WP-CLI command output parsing
@@ -290,8 +291,8 @@ identify available updates for WordPress core, plugins, and themes.`,
 				if OutputFormat == "json" {
 					return printCheckResultsJSON(results, cached.Timestamp, true)
 				}
-				fmt.Println("\n" + lipgloss.NewStyle().Background(lipgloss.Color("99")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" CACHED RESULTS ") + " Displaying results from check run on " + timeStr)
-				fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render("Run 'wpengine check --all-envs' (or with specific targets) to scan for live updates.") + "\n")
+				fmt.Println("\n" + lipgloss.NewStyle().Background(ui.PrimaryColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" CACHED RESULTS ") + " Displaying results from check run on " + timeStr)
+				fmt.Println(lipgloss.NewStyle().Foreground(ui.MutedColor).Render("Run 'wpengine check --all-envs' (or with specific targets) to scan for live updates.") + "\n")
 
 				renderSummaryTable(results)
 
@@ -390,7 +391,7 @@ identify available updates for WordPress core, plugins, and themes.`,
 			}
 			if !found {
 				// Print error directly for missing ones
-				badge := lipgloss.NewStyle().Background(lipgloss.Color("196")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" ERROR ")
+				badge := lipgloss.NewStyle().Background(ui.ErrorColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" ERROR ")
 				fmt.Printf("%s %s: Environment not found or inactive in account\n", badge, target)
 			}
 		}
@@ -415,7 +416,7 @@ type checkJob struct {
 
 func runChecks(resolved []targetInfo, concurrency int) []SiteCheckResult {
 	if OutputFormat != "json" {
-		fmt.Println("\n" + lipgloss.NewStyle().Background(lipgloss.Color("39")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" CHECKING ") + " Scanning environments for available updates...")
+		fmt.Println("\n" + lipgloss.NewStyle().Background(ui.InfoColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" CHECKING ") + " Scanning environments for available updates...")
 		fmt.Printf("Targets: %d | Concurrency: %d\n\n", len(resolved), concurrency)
 	}
 
@@ -445,15 +446,18 @@ func runChecks(resolved []targetInfo, concurrency int) []SiteCheckResult {
 
 				if OutputFormat == "json" {
 					// Keep JSON output clean for automation.
-				} else if checkMinimal {
-					countMu.Lock()
-					completedCount++
-					fmt.Printf("\r\033[K%s Scanned %d/%d environments...", lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).Render("●"), completedCount, len(resolved))
-					countMu.Unlock()
-				} else {
+				} else if checkVerbose {
 					printMu.Lock()
 					renderCheckResult(res)
 					printMu.Unlock()
+				} else {
+					countMu.Lock()
+					completedCount++
+					count := completedCount
+					countMu.Unlock()
+					fmt.Printf("\r\033[K%s Scanned %d/%d environments...",
+						lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true).Render("●"),
+						count, len(resolved))
 				}
 
 				<-sem
@@ -463,8 +467,10 @@ func runChecks(resolved []targetInfo, concurrency int) []SiteCheckResult {
 
 	wg.Wait()
 
-	if OutputFormat != "json" && checkMinimal {
-		fmt.Print("\r\033[K") // Clear the progress line
+	if OutputFormat != "json" {
+		if !checkVerbose {
+			fmt.Print("\r\033[K") // clear the progress line
+		}
 		renderSummaryTable(results)
 	}
 
@@ -512,14 +518,14 @@ func printCheckResultsJSON(results []SiteCheckResult, timestamp time.Time, cache
 func renderSummaryTable(results []SiteCheckResult) {
 	t := table.New().
 		Border(lipgloss.RoundedBorder()).
-		BorderStyle(lipgloss.NewStyle().Foreground(lipgloss.Color("99"))).
+		BorderStyle(lipgloss.NewStyle().Foreground(ui.PrimaryColor)).
 		Headers("Environment", "Type", "WordPress", "Plugins", "Themes", "Status")
 
 	t.StyleFunc(func(row, col int) lipgloss.Style {
 		if row == table.HeaderRow {
 			return lipgloss.NewStyle().
 				Foreground(lipgloss.Color("255")).
-				Background(lipgloss.Color("99")).
+				Background(ui.PrimaryColor).
 				Bold(true).
 				Padding(0, 1)
 		}
@@ -536,14 +542,14 @@ func renderSummaryTable(results []SiteCheckResult) {
 		case "prod":
 			typeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("160")).Bold(true).Render("PROD")
 		case "stg":
-			typeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render("STG")
+			typeBadge = lipgloss.NewStyle().Foreground(ui.WarningColor).Bold(true).Render("STG")
 		case "dev":
-			typeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("39")).Bold(true).Render("DEV")
+			typeBadge = lipgloss.NewStyle().Foreground(ui.InfoColor).Bold(true).Render("DEV")
 		default:
 			if res.EnvType != "" {
 				typeBadge = strings.ToUpper(res.EnvType)
 			} else {
-				typeBadge = lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Bold(true).Render("—")
+				typeBadge = lipgloss.NewStyle().Foreground(ui.MutedColor).Bold(true).Render("—")
 			}
 		}
 
@@ -551,34 +557,34 @@ func renderSummaryTable(results []SiteCheckResult) {
 			wpStr = "—"
 			pluginStr = "—"
 			themeStr = "—"
-			statusStr = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render(fmt.Sprintf("Error: %v", res.Err))
+			statusStr = lipgloss.NewStyle().Foreground(ui.ErrorColor).Bold(true).Render(fmt.Sprintf("Error: %v", res.Err))
 		} else {
 			// WordPress core
 			if len(res.CoreNeed) > 0 {
-				wpStr = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render(fmt.Sprintf("Update Available (%s)", res.CoreNeed[0].Version))
+				wpStr = lipgloss.NewStyle().Foreground(ui.WarningColor).Bold(true).Render(fmt.Sprintf("Update Available (%s)", res.CoreNeed[0].Version))
 			} else {
-				wpStr = lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render("Up-to-date")
+				wpStr = lipgloss.NewStyle().Foreground(ui.SuccessColor).Render("Up-to-date")
 			}
 
 			// Plugins
 			if len(res.PluginsNeed) > 0 {
-				pluginStr = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render(fmt.Sprintf("%d updates", len(res.PluginsNeed)))
+				pluginStr = lipgloss.NewStyle().Foreground(ui.WarningColor).Bold(true).Render(fmt.Sprintf("%d updates", len(res.PluginsNeed)))
 			} else {
-				pluginStr = lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render("0")
+				pluginStr = lipgloss.NewStyle().Foreground(ui.SuccessColor).Render("0")
 			}
 
 			// Themes
 			if len(res.ThemesNeed) > 0 {
-				themeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render(fmt.Sprintf("%d updates", len(res.ThemesNeed)))
+				themeStr = lipgloss.NewStyle().Foreground(ui.WarningColor).Bold(true).Render(fmt.Sprintf("%d updates", len(res.ThemesNeed)))
 			} else {
-				themeStr = lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render("0")
+				themeStr = lipgloss.NewStyle().Foreground(ui.SuccessColor).Render("0")
 			}
 
 			// Overall status
 			if len(res.CoreNeed) > 0 || len(res.PluginsNeed) > 0 || len(res.ThemesNeed) > 0 {
-				statusStr = lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render("Updates pending")
+				statusStr = lipgloss.NewStyle().Foreground(ui.WarningColor).Bold(true).Render("Updates pending")
 			} else {
-				statusStr = lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render("Up-to-date")
+				statusStr = lipgloss.NewStyle().Foreground(ui.SuccessColor).Bold(true).Render("Up-to-date")
 			}
 		}
 
@@ -589,9 +595,9 @@ func renderSummaryTable(results []SiteCheckResult) {
 
 	// Print summary metrics
 	summaryStyle := lipgloss.NewStyle().Bold(true)
-	greenStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true)
-	orangeStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true)
-	redStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+	greenStyle := lipgloss.NewStyle().Foreground(ui.SuccessColor).Bold(true)
+	orangeStyle := lipgloss.NewStyle().Foreground(ui.WarningColor).Bold(true)
+	redStyle := lipgloss.NewStyle().Foreground(ui.ErrorColor).Bold(true)
 
 	var totalEnvs, upToDate, pending, errorsCount int
 	for _, res := range results {
@@ -654,7 +660,7 @@ func checkEnvironmentUpdates(envName string, envType string) SiteCheckResult {
 }
 
 func renderCheckResult(res SiteCheckResult) {
-	primaryCol := lipgloss.Color("99")
+	primaryCol := ui.PrimaryColor
 	titleStyle := lipgloss.NewStyle().Foreground(primaryCol).Bold(true)
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
@@ -667,7 +673,7 @@ func renderCheckResult(res SiteCheckResult) {
 	sb.WriteString(strings.Repeat("-", 40) + "\n")
 
 	if res.Err != nil {
-		errStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
+		errStyle := lipgloss.NewStyle().Foreground(ui.ErrorColor).Bold(true)
 		sb.WriteString(errStyle.Render(fmt.Sprintf("Error checking updates: %v", res.Err)) + "\n")
 		fmt.Println(box.Render(sb.String()))
 		return
@@ -678,11 +684,11 @@ func renderCheckResult(res SiteCheckResult) {
 	// WordPress Core
 	coreTitle := lipgloss.NewStyle().Bold(true).Render("WordPress Core:")
 	if len(res.CoreNeed) > 0 {
-		badge := lipgloss.NewStyle().Background(lipgloss.Color("214")).Foreground(lipgloss.Color("232")).Bold(true).Padding(0, 1).Render(" UPDATE AVAILABLE ")
+		badge := lipgloss.NewStyle().Background(ui.WarningColor).Foreground(lipgloss.Color("232")).Bold(true).Padding(0, 1).Render(" UPDATE AVAILABLE ")
 		sb.WriteString(fmt.Sprintf("%s %s Target: Version %s\n", coreTitle, badge, res.CoreNeed[0].Version))
 		hasUpdates = true
 	} else {
-		badge := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render("Up-to-date")
+		badge := lipgloss.NewStyle().Foreground(ui.SuccessColor).Bold(true).Render("Up-to-date")
 		sb.WriteString(fmt.Sprintf("%s %s\n", coreTitle, badge))
 	}
 
@@ -691,18 +697,18 @@ func renderCheckResult(res SiteCheckResult) {
 	// Plugins
 	pluginTitle := lipgloss.NewStyle().Bold(true).Render("Plugins:")
 	if len(res.PluginsNeed) > 0 {
-		badge := lipgloss.NewStyle().Background(lipgloss.Color("214")).Foreground(lipgloss.Color("232")).Bold(true).Padding(0, 1).Render(fmt.Sprintf(" %d UPDATES AVAILABLE ", len(res.PluginsNeed)))
+		badge := lipgloss.NewStyle().Background(ui.WarningColor).Foreground(lipgloss.Color("232")).Bold(true).Padding(0, 1).Render(fmt.Sprintf(" %d UPDATES AVAILABLE ", len(res.PluginsNeed)))
 		sb.WriteString(fmt.Sprintf("%s %s\n", pluginTitle, badge))
 		for _, p := range res.PluginsNeed {
 			statusTag := ""
 			if p.Status == "active" {
-				statusTag = lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render(" [active]")
+				statusTag = lipgloss.NewStyle().Foreground(ui.SuccessColor).Render(" [active]")
 			}
 			sb.WriteString(fmt.Sprintf("  • %s (%s -> %s)%s\n", p.Name, p.Version, p.UpdateVersion, statusTag))
 		}
 		hasUpdates = true
 	} else {
-		badge := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render("All plugins up-to-date")
+		badge := lipgloss.NewStyle().Foreground(ui.SuccessColor).Bold(true).Render("All plugins up-to-date")
 		sb.WriteString(fmt.Sprintf("%s %s\n", pluginTitle, badge))
 	}
 
@@ -711,25 +717,25 @@ func renderCheckResult(res SiteCheckResult) {
 	// Themes
 	themeTitle := lipgloss.NewStyle().Bold(true).Render("Themes:")
 	if len(res.ThemesNeed) > 0 {
-		badge := lipgloss.NewStyle().Background(lipgloss.Color("214")).Foreground(lipgloss.Color("232")).Bold(true).Padding(0, 1).Render(fmt.Sprintf(" %d UPDATES AVAILABLE ", len(res.ThemesNeed)))
+		badge := lipgloss.NewStyle().Background(ui.WarningColor).Foreground(lipgloss.Color("232")).Bold(true).Padding(0, 1).Render(fmt.Sprintf(" %d UPDATES AVAILABLE ", len(res.ThemesNeed)))
 		sb.WriteString(fmt.Sprintf("%s %s\n", themeTitle, badge))
 		for _, t := range res.ThemesNeed {
 			statusTag := ""
 			if t.Status == "active" {
-				statusTag = lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Render(" [active]")
+				statusTag = lipgloss.NewStyle().Foreground(ui.SuccessColor).Render(" [active]")
 			}
 			sb.WriteString(fmt.Sprintf("  • %s (%s -> %s)%s\n", t.Name, t.Version, t.UpdateVersion, statusTag))
 		}
 		hasUpdates = true
 	} else {
-		badge := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render("All themes up-to-date")
+		badge := lipgloss.NewStyle().Foreground(ui.SuccessColor).Bold(true).Render("All themes up-to-date")
 		sb.WriteString(fmt.Sprintf("%s %s\n", themeTitle, badge))
 	}
 
 	sb.WriteString("\n")
 
 	if !hasUpdates {
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render("✔ Website is fully up-to-date!") + "\n")
+		sb.WriteString(lipgloss.NewStyle().Foreground(ui.SuccessColor).Bold(true).Render("✔ Website is fully up-to-date!") + "\n")
 	}
 
 	fmt.Println(box.Render(sb.String()))
@@ -739,7 +745,9 @@ func init() {
 	checkCmd.Flags().StringVar(&checkBatch, "batch", "", "Comma-separated list of environment names, or path to a text file with targets")
 	checkCmd.Flags().BoolVar(&checkAllEnvs, "all-envs", false, "Check all active environments under the account")
 	checkCmd.Flags().IntVar(&checkConcurrent, "concurrency", 0, "Concurrency limit for checks (falls back to config batch_concurrency)")
-	checkCmd.Flags().BoolVarP(&checkMinimal, "minimal", "m", false, "Minimize output and display a summary table of environment updates")
+	checkCmd.Flags().BoolVar(&checkVerbose, "verbose", false, "Show detailed per-environment update report for each result")
+	checkCmd.Flags().BoolVarP(&checkMinimal, "minimal", "m", false, "") // deprecated, now default behavior
+	checkCmd.Flags().MarkHidden("minimal")
 
 	RootCmd.AddCommand(checkCmd)
 }
@@ -823,8 +831,8 @@ func (m siteSelectionModel) View() string {
 	}
 
 	var sb strings.Builder
-	sb.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).Render("Select environments to update:") + "\n")
-	sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render("Use Up/Down or j/k to navigate, [Space] to toggle, [a] select all, [n] select none, [Enter] to run updates, [q] to cancel.") + "\n\n")
+	sb.WriteString("\n" + lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true).Render("Select environments to update:") + "\n")
+	sb.WriteString(lipgloss.NewStyle().Foreground(ui.MutedColor).Render("Use Up/Down or j/k to navigate, [Space] to toggle, [a] select all, [n] select none, [Enter] to run updates, [q] to cancel.") + "\n\n")
 
 	maxVisible := 10
 	start := 0
@@ -843,7 +851,7 @@ func (m siteSelectionModel) View() string {
 	}
 
 	if start > 0 {
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(fmt.Sprintf("  ▲ ... %d more environments above ...", start)) + "\n")
+		sb.WriteString(lipgloss.NewStyle().Foreground(ui.MutedColor).Render(fmt.Sprintf("  ▲ ... %d more environments above ...", start)) + "\n")
 	}
 
 	for i := start; i < end; i++ {
@@ -851,15 +859,15 @@ func (m siteSelectionModel) View() string {
 		cursorStr := "  "
 		var itemStyle lipgloss.Style
 		if m.cursor == i {
-			cursorStr = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Render("➔ ")
-			itemStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true)
+			cursorStr = lipgloss.NewStyle().Foreground(ui.PrimaryColor).Render("➔ ")
+			itemStyle = lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true)
 		} else {
 			itemStyle = lipgloss.NewStyle()
 		}
 
 		checkStr := "[ ]"
 		if item.selected {
-			checkStr = lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render("[✔]")
+			checkStr = lipgloss.NewStyle().Foreground(ui.SuccessColor).Bold(true).Render("[✔]")
 		}
 
 		typeBadge := ""
@@ -867,14 +875,14 @@ func (m siteSelectionModel) View() string {
 		case "prod":
 			typeBadge = lipgloss.NewStyle().Background(lipgloss.Color("160")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" PROD ")
 		case "stg":
-			typeBadge = lipgloss.NewStyle().Background(lipgloss.Color("214")).Foreground(lipgloss.Color("232")).Bold(true).Padding(0, 1).Render(" STG  ")
+			typeBadge = lipgloss.NewStyle().Background(ui.WarningColor).Foreground(lipgloss.Color("232")).Bold(true).Padding(0, 1).Render(" STG  ")
 		case "dev":
-			typeBadge = lipgloss.NewStyle().Background(lipgloss.Color("39")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" DEV  ")
+			typeBadge = lipgloss.NewStyle().Background(ui.InfoColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" DEV  ")
 		default:
 			if item.envType != "" {
-				typeBadge = lipgloss.NewStyle().Background(lipgloss.Color("244")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" " + strings.ToUpper(item.envType) + " ")
+				typeBadge = lipgloss.NewStyle().Background(ui.MutedColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" " + strings.ToUpper(item.envType) + " ")
 			} else {
-				typeBadge = lipgloss.NewStyle().Background(lipgloss.Color("244")).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" UNK  ")
+				typeBadge = lipgloss.NewStyle().Background(ui.MutedColor).Foreground(lipgloss.Color("255")).Bold(true).Padding(0, 1).Render(" UNK  ")
 			}
 		}
 
@@ -885,7 +893,7 @@ func (m siteSelectionModel) View() string {
 	}
 
 	if end < len(m.items) {
-		sb.WriteString(lipgloss.NewStyle().Foreground(lipgloss.Color("244")).Render(fmt.Sprintf("  ▼ ... %d more environments below ...", len(m.items)-end)) + "\n")
+		sb.WriteString(lipgloss.NewStyle().Foreground(ui.MutedColor).Render(fmt.Sprintf("  ▼ ... %d more environments below ...", len(m.items)-end)) + "\n")
 	}
 
 	// Show currently selected count
@@ -895,7 +903,7 @@ func (m siteSelectionModel) View() string {
 			selectedCount++
 		}
 	}
-	sb.WriteString("\n" + lipgloss.NewStyle().Foreground(lipgloss.Color("99")).Bold(true).Render(fmt.Sprintf("Selected: %d environments", selectedCount)) + "\n")
+	sb.WriteString("\n" + lipgloss.NewStyle().Foreground(ui.PrimaryColor).Bold(true).Render(fmt.Sprintf("Selected: %d environments", selectedCount)) + "\n")
 
 	return sb.String()
 }

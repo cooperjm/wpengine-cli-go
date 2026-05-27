@@ -1,12 +1,63 @@
 package cmd
 
 import (
+	"bytes"
 	"errors"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"wpengine-cli/internal/ui"
 )
+
+func TestRunChecksDefaultIsSummaryTable(t *testing.T) {
+	// Capture stdout
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	results := []SiteCheckResult{
+		{EnvName: "env-one", EnvType: "prod", Err: nil},
+	}
+	renderSummaryTable(results)
+
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	out := buf.String()
+
+	if !strings.Contains(out, "Environment") {
+		t.Errorf("expected summary table header in output, got: %s", out)
+	}
+	if strings.Contains(out, "Update Report for:") {
+		t.Errorf("expected no verbose box in default output, got: %s", out)
+	}
+}
+
+func TestRenderCheckResultVerboseFormat(t *testing.T) {
+	old := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	res := SiteCheckResult{
+		EnvName:     "my-site",
+		EnvType:     "prod",
+		PluginsNeed: []PluginUpdateInfo{{Name: "akismet", Version: "5.0", UpdateVersion: "5.1", Status: "active"}},
+	}
+	renderCheckResult(res)
+
+	w.Close()
+	os.Stdout = old
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	out := buf.String()
+
+	if !strings.Contains(out, "Update Report for: my-site") {
+		t.Errorf("expected verbose box header in output, got: %s", out)
+	}
+}
 
 func TestRenderSummaryTable(t *testing.T) {
 	results := []SiteCheckResult{
