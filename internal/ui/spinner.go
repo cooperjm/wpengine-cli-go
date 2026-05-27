@@ -5,14 +5,16 @@ import (
 	"os"
 	"time"
 
+	"wpengine-cli/internal/ux"
+
 	"github.com/charmbracelet/lipgloss"
 	"golang.org/x/term"
 )
 
 // RunWithSpinner displays an animated spinner with message while fn executes.
-// Falls back to a direct fn() call when plain is true or stdout is not a terminal.
+// Falls back to a direct fn() call when plain output is active or stderr is not a terminal.
 func RunWithSpinner(message string, plain bool, fn func() error) error {
-	if plain || !term.IsTerminal(int(os.Stdout.Fd())) {
+	if ux.Plain(plain) || !term.IsTerminal(int(os.Stderr.Fd())) {
 		return fn()
 	}
 
@@ -31,10 +33,10 @@ func RunWithSpinner(message string, plain bool, fn func() error) error {
 	for {
 		select {
 		case err := <-done:
-			fmt.Print("\r\033[K")
+			fmt.Fprint(os.Stderr, "\r\033[K")
 			return err
 		case <-ticker.C:
-			fmt.Printf("\r%s %s", style.Render(frames[i%len(frames)]), message)
+			fmt.Fprintf(os.Stderr, "\r%s %s", style.Render(frames[i%len(frames)]), message)
 			i++
 		}
 	}
