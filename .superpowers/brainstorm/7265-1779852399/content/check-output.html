@@ -1,0 +1,82 @@
+<h2>How should <code>wpengine check</code> display results?</h2>
+<p class="subtitle">The current default is very verbose. Which approach feels right?</p>
+
+<div class="options">
+
+  <div class="option" data-choice="table-default" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Summary table as the default (current <code>--minimal</code>)</h3>
+      <p>Show a compact table of all results once scanning is done. Add a <code>--verbose</code> flag for the full per-env detail boxes. Most useful when checking many environments.</p>
+      <div class="mockup" style="margin-top:0.75rem">
+        <div class="mockup-header">wpengine check --all-envs</div>
+        <div class="mockup-body" style="font-family:monospace;font-size:0.75rem;line-height:1.7">
+          <div style="color:#a78bfa;margin-bottom:0.5rem">● Scanning 6 environments... ████████████████ done</div>
+          <div style="display:grid;grid-template-columns:1.5fr 60px 1fr 60px 60px 1fr;gap:0;background:#2d2d4e;padding:0.3rem 0.5rem;font-weight:bold;color:#e2e8f0;font-size:0.7rem">
+            <span>Environment</span><span>Type</span><span>WordPress</span><span>Plugins</span><span>Themes</span><span>Status</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.5fr 60px 1fr 60px 60px 1fr;gap:0;padding:0.25rem 0.5rem;border-bottom:1px solid #222">
+            <span style="color:#ddd">acme-production</span><span style="color:#f87171;font-weight:bold">PROD</span><span style="color:#4ade80">Up-to-date</span><span style="color:#fbbf24;font-weight:bold">3</span><span style="color:#4ade80">0</span><span style="color:#fbbf24;font-weight:bold">Updates pending</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.5fr 60px 1fr 60px 60px 1fr;gap:0;padding:0.25rem 0.5rem;border-bottom:1px solid #222">
+            <span style="color:#ddd">acme-staging</span><span style="color:#fbbf24;font-weight:bold">STG</span><span style="color:#fbbf24;font-weight:bold">6.7.1 avail</span><span style="color:#fbbf24;font-weight:bold">5</span><span style="color:#fbbf24;font-weight:bold">2</span><span style="color:#fbbf24;font-weight:bold">Updates pending</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.5fr 60px 1fr 60px 60px 1fr;gap:0;padding:0.25rem 0.5rem;border-bottom:1px solid #222">
+            <span style="color:#ddd">acme-dev</span><span style="color:#38bdf8;font-weight:bold">DEV</span><span style="color:#4ade80">Up-to-date</span><span style="color:#4ade80">0</span><span style="color:#4ade80">0</span><span style="color:#4ade80;font-weight:bold">Up-to-date</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1.5fr 60px 1fr 60px 60px 1fr;gap:0;padding:0.25rem 0.5rem;border-bottom:1px solid #222">
+            <span style="color:#ddd">globex-wp</span><span style="color:#f87171;font-weight:bold">PROD</span><span style="color:#4ade80">Up-to-date</span><span style="color:#4ade80">0</span><span style="color:#4ade80">0</span><span style="color:#4ade80;font-weight:bold">Up-to-date</span>
+          </div>
+          <div style="padding:0.4rem 0.5rem;color:#666;font-size:0.7rem">Summary: 6 environments | <span style="color:#4ade80">3 Up-to-date</span> | <span style="color:#fbbf24">2 Updates pending</span> | <span style="color:#f87171">1 Error</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="live-stream" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Live streaming results with a final summary</h3>
+      <p>Keep printing each result as it comes in (good for seeing progress on slow connections), but make each result a compact single line instead of a full box. Print the summary table at the end.</p>
+      <div class="mockup" style="margin-top:0.75rem">
+        <div class="mockup-header">wpengine check --all-envs</div>
+        <div class="mockup-body" style="font-family:monospace;font-size:0.75rem;line-height:1.9">
+          <div><span style="color:#a78bfa;font-weight:bold">●</span> Scanning 6 environments (concurrency: 10)...</div>
+          <div><span style="color:#4ade80">✔</span> <span style="color:#ddd;font-weight:bold">acme-dev</span> <span style="color:#38bdf8;font-weight:bold">DEV</span> — All up-to-date</div>
+          <div><span style="color:#4ade80">✔</span> <span style="color:#ddd;font-weight:bold">globex-wp</span> <span style="color:#f87171;font-weight:bold">PROD</span> — All up-to-date</div>
+          <div><span style="color:#fbbf24">⚠</span> <span style="color:#ddd;font-weight:bold">acme-production</span> <span style="color:#f87171;font-weight:bold">PROD</span> — 3 plugin updates</div>
+          <div><span style="color:#fbbf24">⚠</span> <span style="color:#ddd;font-weight:bold">acme-staging</span> <span style="color:#fbbf24;font-weight:bold">STG</span> — WP core + 5 plugins + 2 themes</div>
+          <div><span style="color:#f87171">✖</span> <span style="color:#ddd;font-weight:bold">broken-site</span> <span style="color:#fbbf24;font-weight:bold">STG</span> — SSH connection failed</div>
+          <div style="margin-top:0.5rem;color:#666">— summary table follows —</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="keep-verbose" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Keep verbose boxes as default, improve readability</h3>
+      <p>Keep the current per-environment boxes, but tighten the layout and add a collapsible plugin/theme list. Best if you often want to see exactly which plugins need updates without a second command.</p>
+      <div class="mockup" style="margin-top:0.75rem">
+        <div class="mockup-header">wpengine check acme-production</div>
+        <div class="mockup-body" style="font-family:monospace;font-size:0.75rem;line-height:1.7">
+          <div style="border:1px solid #4c1d95;border-radius:6px;padding:0.5rem 0.75rem;margin-bottom:0.5rem">
+            <div style="color:#a78bfa;font-weight:bold;margin-bottom:0.3rem">acme-production <span style="background:#7f1d1d;color:#fca5a5;padding:0 4px;border-radius:3px;font-size:0.7rem">PROD</span></div>
+            <div><span style="color:#ddd">WordPress Core</span>  <span style="color:#4ade80">Up-to-date</span></div>
+            <div><span style="color:#ddd">Plugins</span>  <span style="color:#fbbf24;font-weight:bold">3 updates</span></div>
+            <div style="padding-left:1rem;color:#888">• woocommerce 8.3.1 → 8.4.0 <span style="color:#4ade80;font-size:0.7rem">[active]</span></div>
+            <div style="padding-left:1rem;color:#888">• yoast-seo 21.4 → 21.7 <span style="color:#4ade80;font-size:0.7rem">[active]</span></div>
+            <div style="padding-left:1rem;color:#888">• contact-form-7 5.7.2 → 5.8.0</div>
+            <div><span style="color:#ddd">Themes</span>  <span style="color:#4ade80">All up-to-date</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:1.5rem">
+  <p class="subtitle">Pick what feels most useful day-to-day. Let me know in the terminal.</p>
+</div>

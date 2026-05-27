@@ -1,0 +1,86 @@
+<h2>Section 3: <code>site list</code> — grouped tree layout</h2>
+<p class="subtitle">Here's the proposed design in detail. Does this match what you had in mind?</p>
+
+<div class="mockup">
+  <div class="mockup-header">wpengine site list</div>
+  <div class="mockup-body" style="font-family:monospace;font-size:0.82rem;line-height:1.0">
+
+    <!-- Header -->
+    <div style="color:#a78bfa;font-weight:bold;margin-bottom:0.75rem;font-size:0.9rem">WP Engine Sites</div>
+
+    <!-- Site 1 -->
+    <div style="padding:0.4rem 0;border-top:1px solid #333">
+      <span style="color:#a78bfa;font-weight:bold">⬡</span>
+      <span style="color:#e2e8f0;font-weight:bold;margin-left:0.4rem">acme-corp</span>
+      <span style="color:#555;margin-left:1rem;font-size:0.75rem">4f2a1b3c-...</span>
+    </div>
+    <div style="padding:0.25rem 0 0.25rem 1.75rem;display:flex;gap:1rem;align-items:center">
+      <span style="background:#7f1d1d;color:#fca5a5;padding:0 5px;border-radius:3px;font-size:0.72rem;font-weight:bold">PROD</span>
+      <span style="color:#ddd;min-width:160px">acme-production</span>
+      <span style="color:#555">acme-production.wpengine.com</span>
+      <span style="color:#4ade80;font-size:0.75rem;margin-left:auto">● active</span>
+    </div>
+    <div style="padding:0.25rem 0 0.25rem 1.75rem;display:flex;gap:1rem;align-items:center">
+      <span style="background:#78350f;color:#fcd34d;padding:0 5px;border-radius:3px;font-size:0.72rem;font-weight:bold">STG</span>
+      <span style="color:#ddd;min-width:160px">acme-staging</span>
+      <span style="color:#555">acme-staging.wpengine.com</span>
+      <span style="color:#4ade80;font-size:0.75rem;margin-left:auto">● active</span>
+    </div>
+    <div style="padding:0.25rem 0 0.5rem 1.75rem;display:flex;gap:1rem;align-items:center">
+      <span style="background:#0c4a6e;color:#7dd3fc;padding:0 5px;border-radius:3px;font-size:0.72rem;font-weight:bold">DEV</span>
+      <span style="color:#ddd;min-width:160px">acme-dev</span>
+      <span style="color:#555">acme-dev.wpengine.com</span>
+      <span style="color:#4ade80;font-size:0.75rem;margin-left:auto">● active</span>
+    </div>
+
+    <!-- Site 2 -->
+    <div style="padding:0.4rem 0;border-top:1px solid #333">
+      <span style="color:#a78bfa;font-weight:bold">⬡</span>
+      <span style="color:#e2e8f0;font-weight:bold;margin-left:0.4rem">globex-wp</span>
+      <span style="color:#555;margin-left:1rem;font-size:0.75rem">9a8d7c6b-...</span>
+    </div>
+    <div style="padding:0.25rem 0 0.5rem 1.75rem;display:flex;gap:1rem;align-items:center">
+      <span style="background:#7f1d1d;color:#fca5a5;padding:0 5px;border-radius:3px;font-size:0.72rem;font-weight:bold">PROD</span>
+      <span style="color:#ddd;min-width:160px">globex-wp</span>
+      <span style="color:#555">globex.com</span>
+      <span style="color:#4ade80;font-size:0.75rem;margin-left:auto">● active</span>
+    </div>
+
+    <!-- Site 3 -->
+    <div style="padding:0.4rem 0;border-top:1px solid #333">
+      <span style="color:#a78bfa;font-weight:bold">⬡</span>
+      <span style="color:#e2e8f0;font-weight:bold;margin-left:0.4rem">initech-blog</span>
+      <span style="color:#555;margin-left:1rem;font-size:0.75rem">b3e1f9d2-...</span>
+    </div>
+    <div style="padding:0.25rem 0 0.25rem 1.75rem;display:flex;gap:1rem;align-items:center">
+      <span style="background:#7f1d1d;color:#fca5a5;padding:0 5px;border-radius:3px;font-size:0.72rem;font-weight:bold">PROD</span>
+      <span style="color:#ddd;min-width:160px">initech-blog</span>
+      <span style="color:#555">initech.com</span>
+      <span style="color:#4ade80;font-size:0.75rem;margin-left:auto">● active</span>
+    </div>
+    <div style="padding:0.25rem 0 0.5rem 1.75rem;display:flex;gap:1rem;align-items:center">
+      <span style="background:#78350f;color:#fcd34d;padding:0 5px;border-radius:3px;font-size:0.72rem;font-weight:bold">STG</span>
+      <span style="color:#ddd;min-width:160px">initech-staging</span>
+      <span style="color:#555">staging.initech.com</span>
+      <span style="color:#566;font-size:0.75rem;margin-left:auto">○ inactive</span>
+    </div>
+
+    <!-- Footer -->
+    <div style="border-top:1px solid #333;padding-top:0.5rem;margin-top:0.25rem;color:#555;font-size:0.75rem">
+      3 sites · 6 environments
+    </div>
+
+  </div>
+</div>
+
+<div class="section" style="margin-top:1.5rem">
+  <h3>A few design notes:</h3>
+  <ul style="color:#94a3b8;line-height:1.8;margin-top:0.5rem">
+    <li>The <code>--production</code> / <code>--staging</code> / <code>--dev</code> filter flags still work — they hide entire sites with no matching envs</li>
+    <li>The site ID is shown dimmed so it's visible but doesn't compete with the name</li>
+    <li><code>active</code> / <code>inactive</code> status shown per environment, not per site</li>
+    <li><code>env list</code> stays as a flat table (it's already one row per env) but gets the same grouped-by-site sort order and a site name column</li>
+  </ul>
+</div>
+
+<p class="subtitle" style="margin-top:1.5rem">Does this look right? Let me know in the terminal.</p>

@@ -1,0 +1,42 @@
+<h2>Which parts of the CLI do you use most?</h2>
+<p class="subtitle">Select all that apply — this helps me focus the UX improvements where they matter most.</p>
+
+<div class="options" data-multiselect>
+
+  <div class="option" data-choice="check" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3><code>wpengine check</code> — Update Scanner</h3>
+      <p>SSH into environments, query WP-CLI, report which sites need WordPress core / plugin / theme updates. Shows cached results when run without args.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="update" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3><code>wpengine update</code> — Backup + Update Pipeline</h3>
+      <p>Creates a backup checkpoint, polls until complete, then runs WP-CLI updates via SSH. Has an interactive Bubble Tea TUI dashboard for live progress.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="site-env" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3><code>wpengine site list</code> / <code>env list</code> — Inventory</h3>
+      <p>Lists sites and environments in responsive Lipgloss tables with PROD / STG / DEV color coding. Supports filtering by environment type.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="doctor-config" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3><code>wpengine doctor</code> / <code>config</code> — Setup & Health</h3>
+      <p>Checks API credentials, SSH key, cache, and terminal compatibility. Config stores credentials and default settings in YAML.</p>
+    </div>
+  </div>
+
+</div>
+
+<div class="section" style="margin-top:2rem">
+  <p class="subtitle">Select your most-used commands above, then let me know in the terminal when you're done.</p>
+</div>
