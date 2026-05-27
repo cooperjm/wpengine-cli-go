@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"wpengine-cli/internal/config"
+	"wpengine-cli/internal/ui"
 	"wpengine-cli/internal/ux"
 
 	"github.com/charmbracelet/lipgloss"
@@ -59,12 +60,12 @@ var doctorCmd = &cobra.Command{
 		fmt.Println()
 
 		passed, warned, failed := doctorCounts(checks)
-		if PlainOutput {
+		if ux.Plain(PlainOutput) {
 			fmt.Printf("%d passed · %d warnings · %d failures\n\n", passed, warned, failed)
 		} else {
-			passedStr := lipgloss.NewStyle().Foreground(lipgloss.Color("46")).Bold(true).Render(fmt.Sprintf("%d passed", passed))
-			warnStr := lipgloss.NewStyle().Foreground(lipgloss.Color("214")).Bold(true).Render(fmt.Sprintf("%d warnings", warned))
-			failStr := lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true).Render(fmt.Sprintf("%d failures", failed))
+			passedStr := lipgloss.NewStyle().Foreground(ui.SuccessColor).Bold(true).Render(fmt.Sprintf("%d passed", passed))
+			warnStr := lipgloss.NewStyle().Foreground(ui.WarningColor).Bold(true).Render(fmt.Sprintf("%d warnings", warned))
+			failStr := lipgloss.NewStyle().Foreground(ui.ErrorColor).Bold(true).Render(fmt.Sprintf("%d failures", failed))
 			fmt.Printf("%s · %s · %s\n\n", passedStr, warnStr, failStr)
 		}
 
