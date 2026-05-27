@@ -206,7 +206,7 @@ var checkCmd = &cobra.Command{
 	Long: `Securely connects via SSH to the targeted environments and queries WP-CLI to 
 identify available updates for WordPress core, plugins, and themes.`,
 	Example: `  wpengine check my-dev-sandbox
-  wpengine check --all-envs --minimal
+  wpengine check --all-envs --verbose
   wpengine check --batch target_envs.txt --output json
   wpengine check`,
 	PreRunE: func(cmd *cobra.Command, args []string) error {

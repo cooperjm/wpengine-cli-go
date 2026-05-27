@@ -192,7 +192,7 @@ func runUpdatesForEnvironments(targets []string, scope string, concurrency int, 
 			return fmt.Errorf("TUI error: %w", err)
 		}
 	} else {
-		runNonInteractive(resolvedJobs, scope, concurrency)
+		runNonInteractive(resolvedJobs, scope, concurrency, email, dryRun)
 	}
 
 	// Update Check Results Cache if not a dry-run
@@ -290,7 +290,7 @@ func printUpdateResultsJSON(jobs []*ui.Job, scope string, concurrency int, dryRu
 }
 
 // runNonInteractive executes the updates using clean Lipgloss-styled print statements (useful for scripting/CI).
-func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
+func runNonInteractive(jobs []*ui.Job, scope string, concurrency int, email string, dryRun bool) {
 	if OutputFormat != "json" {
 		fmt.Println("\n" + ui.GetStatusBadge("updating") + " Starting Batch Updates (Non-Interactive Mode)")
 		fmt.Printf("Targets: %d | Concurrency: %d | Scope: %s\n\n", len(jobs), concurrency, scope)
@@ -344,8 +344,8 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 
 				backupDesc := fmt.Sprintf("cli-pre-update-%d", time.Now().Unix())
 				var emails []string
-				if updateEmail != "" {
-					emails = []string{updateEmail}
+				if email != "" {
+					emails = []string{email}
 				}
 				backup, err := APIClient.CreateBackup(job.ID, backupDesc, emails)
 				if err != nil {
@@ -387,7 +387,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 				printLog("UPDATE", job.Name, "Running updates via WP-CLI...", ui.PrimaryColor)
 
 				wpArgs := []string{"plugin", "update"}
-				if updateDryRun {
+				if dryRun {
 					wpArgs = append(wpArgs, "--dry-run")
 				}
 
@@ -396,7 +396,7 @@ func runNonInteractive(jobs []*ui.Job, scope string, concurrency int) {
 					scopes := []string{"plugin", "theme", "core"}
 					for _, s := range scopes {
 						args := []string{s, "update"}
-						if updateDryRun {
+						if dryRun {
 							args = append(args, "--dry-run")
 						}
 						if s != "core" {
